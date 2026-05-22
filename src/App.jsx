@@ -1,11 +1,24 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 
-const APP_VERSION = "0.7.0";
+const APP_VERSION = "0.8.0";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CHANGELOG
 // ─────────────────────────────────────────────────────────────────────────────
 const CHANGELOG = [
+  {
+    version: "0.8.0", date: "2026-05-21",
+    changes: [
+      "DevKit v1.2: Confirm bubble after Inspect — shows element name with Log Only / Open in Map options",
+      "DevKit v1.2: Self-regenerating code map — scans live DOM and scripts on every panel open, never stale",
+      "DevKit v1.2: Resolve/reopen workflow in Entries tab — Open / Resolved / All filter chips",
+      "DevKit v1.2: Nav event log in State tab — last 8 screen transitions with timestamps",
+      "DevKit v1.2: Entry editing — tap edit icon to update message inline",
+      "DevKit v1.2: Mouse + touch fallback for Inspect — works on desktop alongside mobile",
+      "DevKit v1.2: State tab live-polls every 2s when panel is open",
+      "DevKit v1.2: → Claude tab includes live code map summary and function count",
+    ],
+  },
   {
     version: "0.7.0", date: "2026-05-11",
     changes: [
@@ -2897,60 +2910,545 @@ export default function App() {
     showToast("Backup imported! ✅");
   };
 
-  // ── DevKit: injected once on mount, lives outside React root ──────
+  // ── DevKit v1.3: injected once on mount, lives outside React root ──────
   useEffect(() => {
-    if (document.getElementById('dk-toggle')) return; // already mounted
+    if (document.getElementById('dk-toggle')) return;
 
     // ── Config ────────────────────────────────────────────────────
     const DK_KEY     = 'hw4_devkit';
-    const DK_VERSION = '1.1';
+    const DKM_KEY    = 'hw4_imap_v1';
+    const DK_VERSION = '1.3';
     const APP_VER    = APP_VERSION;
     const APP_PREFIX = 'hw4_';
-    const DK_COMPS   = [
-      'dash·points-card','dash·tasks-card','dash·event-card','dash·streak-card',
-      'dash·compliment-nudge','dash·alert-nudge','dash·quick-actions',
-      'hd·streak-bar','hd·history-panel','hd·pts-banner','hd·cat-filters',
-      'hd·rec-filters','hd·task-card','hd·task-card·rec-badge','hd·task-card·due-tag',
-      'hd·AddTaskModal','hd·AddTaskModal·diff','hd·AddTaskModal·recur',
-      'hd·CompleteModal','hd·CompleteModal·bonus',
-      'rew·tab-toggle','rew·reward-card','rew·reward-card·redeem',
-      'rew·custom-card','rew·custom-card·edit','rew·custom-card·del',
-      'rew·AddRewardModal','rew·AddRewardModal·icon',
-      'evt·event-card','evt·event-card·alerts','evt·event-card·trad',
-      'evt·traditions-panel','evt·AddEventModal',
-      'dt·axis-card','dt·axis-opts','dt·browse-list','dt·date-history',
-      'gi·hint-card','gi·hint-card·status','gi·hint-card·link',
-      'gi·status-filters','gi·seeds-grid','gi·AddHintModal',
-      'cp·daily-card','cp·daily-card·deliver','cp·daily-card·refresh',
-      'cp·reaction-picker','cp·library-list','cp·history-list','cp·stats-bars',
-      'off·paste-box','off·offer-card','off·offer-card·pts',
-      'off·CreateModal','off·CreateModal·type','off·CreateModal·pts',
-      'hw·profile-section','hw·sizes-section','hw·prefs-section','hw·people-section','hw·notes-section',
-      'set·backup-nudge','set·export-btn','set·import-btn','set·changelog','set·devmode-toggle',
+
+    // ── Happy Wife Screen Map ─────────────────────────────────────
+    const DKM_SCREENS = {
+      DASHBOARD:   {icon:'🏠', name:'Dashboard'},
+      HONEYDО:     {icon:'🛠️', name:'Honey-Do Hub'},
+      REWARDS:     {icon:'🎁', name:'Reward Store'},
+      EVENTS:      {icon:'📅', name:'Events'},
+      DATES:       {icon:'🍷', name:'Date Planner'},
+      GIFTINTEL:   {icon:'💡', name:'Gift Intel'},
+      COMPLIMENTS: {icon:'💬', name:'Compliments'},
+      OFFERS:      {icon:'📨', name:'Offers'},
+      HERWORLD:    {icon:'🌸', name:'Her World'},
+      SETTINGS:    {icon:'⚙️', name:'Settings'},
+      MODALS:      {icon:'💬', name:'Modals'},
+    };
+
+    const DKM_TYPE_ICONS = {
+      CARD:'🃏', BUTTON:'🔘', INPUT:'✏️', MODAL:'💬',
+      BADGE:'🏷', FILTER:'🔽', TOGGLE:'🔀', SECTION:'📑',
+    };
+
+    // ── Interaction Map rows — user edits persisted separately ────
+    // Each row: id, form (screen key), object (human name), type, trigger,
+    //   stores (yes/no), status (ok/partial/broken/tbd), priority (1/2/3),
+    //   current (what it does now), desired (''), notes (''), domHint (CSS selector)
+    let DKM_ROWS = [
+      // DASHBOARD
+      {id:1,  form:'DASHBOARD',   object:'Points Balance Card',          type:'CARD',   trigger:'state', stores:'no', status:'ok',  priority:3, current:'Shows HW Points balance, updates on task completion', desired:'', notes:'', domHint:'.dcard,.pts-badge,.pts-val'},
+      {id:2,  form:'DASHBOARD',   object:'Open Tasks Card',              type:'CARD',   trigger:'state', stores:'no', status:'ok',  priority:3, current:'Shows count of pending tasks', desired:'', notes:'', domHint:'.dcard'},
+      {id:3,  form:'DASHBOARD',   object:'Upcoming Event Card',          type:'CARD',   trigger:'state', stores:'no', status:'ok',  priority:2, current:'Shows nearest event + days countdown, highlights red if ≤7d', desired:'', notes:'', domHint:'.dcard.urge,.dcard'},
+      {id:4,  form:'DASHBOARD',   object:'Gift Hints Card',              type:'CARD',   trigger:'state', stores:'no', status:'ok',  priority:3, current:'Shows active hint count', desired:'', notes:'', domHint:'.dcard'},
+      {id:5,  form:'DASHBOARD',   object:'Daily Compliment Nudge',       type:'CARD',   trigger:'state', stores:'no', status:'ok',  priority:2, current:'Shows rotating daily compliment text', desired:'', notes:'', domHint:'.nudge,.nudge-txt'},
+      {id:6,  form:'DASHBOARD',   object:'Upcoming Event Alert',         type:'CARD',   trigger:'state', stores:'no', status:'ok',  priority:1, current:'Shows red alert nudge when event ≤14 days away', desired:'', notes:'', domHint:'.nudge.alert'},
+      {id:7,  form:'DASHBOARD',   object:'Quick Action — Log Task',      type:'BUTTON', trigger:'tap',   stores:'no', status:'ok',  priority:3, current:'Navigates to Honey-Do tab', desired:'', notes:'', domHint:'.qbtn'},
+      {id:8,  form:'DASHBOARD',   object:'Quick Action — Capture Hint',  type:'BUTTON', trigger:'tap',   stores:'no', status:'ok',  priority:3, current:'Navigates to Gift Intel tab', desired:'', notes:'', domHint:'.qbtn'},
+      {id:9,  form:'DASHBOARD',   object:'Quick Action — Plan a Date',   type:'BUTTON', trigger:'tap',   stores:'no', status:'ok',  priority:3, current:'Navigates to Dates tab', desired:'', notes:'', domHint:'.qbtn'},
+      {id:10, form:'DASHBOARD',   object:'Quick Action — Send Offer',    type:'BUTTON', trigger:'tap',   stores:'no', status:'ok',  priority:3, current:'Navigates to Offers tab', desired:'', notes:'', domHint:'.qbtn'},
+      // HONEY-DO
+      {id:20, form:'HONEYDО',     object:'Points Banner',                type:'CARD',   trigger:'state', stores:'no', status:'ok',  priority:3, current:'Shows balance + next reward progress bar', desired:'', notes:'', domHint:'.pts-banner,.pts-big'},
+      {id:21, form:'HONEYDО',     object:'Category Filter Chips',        type:'FILTER', trigger:'tap',   stores:'no', status:'ok',  priority:3, current:'Filters task list by category', desired:'', notes:'', domHint:'.filters .chip'},
+      {id:22, form:'HONEYDО',     object:'Task Card',                    type:'CARD',   trigger:'tap',   stores:'yes',status:'ok',  priority:2, current:'Tap opens CompleteModal for pending, toggles off for completed', desired:'', notes:'', domHint:'.tcard'},
+      {id:23, form:'HONEYDО',     object:'Task Card — Recurring Badge',  type:'BADGE',  trigger:'state', stores:'no', status:'ok',  priority:3, current:'Shows recurrence schedule on recurring tasks', desired:'', notes:'', domHint:'.tcard .rec-badge,.tcard-rec'},
+      {id:24, form:'HONEYDО',     object:'Task Card — Due Tag',          type:'BADGE',  trigger:'state', stores:'no', status:'ok',  priority:2, current:'Shows due date on recurring tasks, highlights if overdue', desired:'', notes:'', domHint:'.tcard .due-tag'},
+      {id:25, form:'HONEYDО',     object:'Add Task Button',              type:'BUTTON', trigger:'tap',   stores:'no', status:'ok',  priority:3, current:'Opens AddTaskModal bottom sheet', desired:'', notes:'', domHint:'.sec-act'},
+      {id:26, form:'HONEYDО',     object:'Streak Bar',                   type:'CARD',   trigger:'state', stores:'no', status:'ok',  priority:3, current:'Shows current completion streak with flame icon', desired:'', notes:'', domHint:'.streak-bar,.streak-val'},
+      {id:27, form:'HONEYDО',     object:'Task History Panel',           type:'SECTION',trigger:'tap',   stores:'no', status:'ok',  priority:3, current:'Expandable panel showing last 20 completions', desired:'', notes:'', domHint:'.history-panel'},
+      {id:28, form:'HONEYDО',     object:'AddTaskModal — Name Input',    type:'MODAL',  trigger:'type',  stores:'no', status:'ok',  priority:3, current:'Task name field in add modal', desired:'', notes:'', domHint:'.modal .finp'},
+      {id:29, form:'HONEYDО',     object:'AddTaskModal — Difficulty',    type:'MODAL',  trigger:'tap',   stores:'no', status:'ok',  priority:3, current:'5-level difficulty selector, updates point value', desired:'', notes:'', domHint:'.dopt,.diffs'},
+      {id:30, form:'HONEYDО',     object:'AddTaskModal — Recurrence',    type:'MODAL',  trigger:'tap',   stores:'no', status:'ok',  priority:2, current:'None / Weekly / Monthly selector', desired:'', notes:'', domHint:'.modal .rec-sel'},
+      {id:31, form:'HONEYDО',     object:'CompleteModal',                type:'MODAL',  trigger:'auto',  stores:'yes',status:'ok',  priority:2, current:'Opens on task tap, shows bonus multipliers before confirming', desired:'', notes:'', domHint:'.overlay .mtitle'},
+      {id:32, form:'HONEYDО',     object:'CompleteModal — Bonus Chips',  type:'MODAL',  trigger:'tap',   stores:'yes',status:'ok',  priority:2, current:'Without asked (+25%), Same day (+10%), She noticed (+20%)', desired:'', notes:'', domHint:'.bonus-chip,.bonus-row'},
+      // REWARDS
+      {id:40, form:'REWARDS',     object:'For Her / For Him Toggle',     type:'TOGGLE', trigger:'tap',   stores:'no', status:'ok',  priority:3, current:'Switches reward list between Her and Him tabs', desired:'', notes:'', domHint:'.rtoggle,.rtbtn'},
+      {id:41, form:'REWARDS',     object:'Reward Card',                  type:'CARD',   trigger:'state', stores:'no', status:'ok',  priority:3, current:'Shows reward name, tier, point cost, redeem button', desired:'', notes:'', domHint:'.rcard'},
+      {id:42, form:'REWARDS',     object:'Reward Card — Redeem Button',  type:'BUTTON', trigger:'tap',   stores:'yes',status:'ok',  priority:2, current:'Deducts points if balance sufficient, shows toast', desired:'', notes:'', domHint:'.r-red'},
+      {id:43, form:'REWARDS',     object:'Custom Reward Card',           type:'CARD',   trigger:'state', stores:'no', status:'ok',  priority:3, current:'User-created reward with edit/delete controls', desired:'', notes:'', domHint:'.custom-rcard'},
+      {id:44, form:'REWARDS',     object:'Add Custom Reward Modal',      type:'MODAL',  trigger:'tap',   stores:'yes',status:'ok',  priority:2, current:'Name, cost, icon fields for custom reward creation', desired:'', notes:'', domHint:'.modal .mtitle'},
+      // EVENTS
+      {id:50, form:'EVENTS',      object:'Event Card',                   type:'CARD',   trigger:'state', stores:'no', status:'ok',  priority:2, current:'Countdown, category badge, alert day chips, notes', desired:'', notes:'', domHint:'.ecard'},
+      {id:51, form:'EVENTS',      object:'Event Card — Alert Chips',     type:'BADGE',  trigger:'state', stores:'no', status:'ok',  priority:3, current:'Alert threshold chips highlight when within window', desired:'', notes:'', domHint:'.achip.fired,.achip'},
+      {id:52, form:'EVENTS',      object:'Event Card — Tradition',       type:'BADGE',  trigger:'state', stores:'no', status:'ok',  priority:3, current:'Shows anniversary tradition for matched year', desired:'', notes:'', domHint:'.etrad'},
+      {id:53, form:'EVENTS',      object:'Anniversary Traditions Panel', type:'SECTION',trigger:'tap',   stores:'no', status:'ok',  priority:3, current:'Expandable panel showing Year 1–60 gift traditions', desired:'', notes:'', domHint:'.card .sub-lbl'},
+      {id:54, form:'EVENTS',      object:'Add Event Modal',              type:'MODAL',  trigger:'tap',   stores:'yes',status:'ok',  priority:2, current:'Name, category, month/day/year, notes fields', desired:'', notes:'', domHint:'.overlay .mtitle'},
+      // DATES
+      {id:60, form:'DATES',       object:'Axis Card (What/Where/How/When)',type:'CARD', trigger:'tap',   stores:'yes',status:'ok',  priority:2, current:'4-axis date picker, each axis has predefined + custom options', desired:'', notes:'', domHint:'.axis-card,.axis-col'},
+      {id:61, form:'DATES',       object:'Axis Option Chips',            type:'FILTER', trigger:'tap',   stores:'yes',status:'ok',  priority:3, current:'Select one option per axis, persists custom additions', desired:'', notes:'', domHint:'.axis-opt'},
+      {id:62, form:'DATES',       object:'Smart Spin Button',            type:'BUTTON', trigger:'tap',   stores:'no', status:'ok',  priority:2, current:'Combines all 4 axis picks into a date idea result', desired:'', notes:'', domHint:'.spin-btn'},
+      {id:63, form:'DATES',       object:'Browse All / Spin Toggle',     type:'TOGGLE', trigger:'tap',   stores:'no', status:'ok',  priority:3, current:'Switches between spin mode and browse list', desired:'', notes:'', domHint:'.sec-act'},
+      {id:64, form:'DATES',       object:'Date History Log',             type:'SECTION',trigger:'state', stores:'no', status:'ok',  priority:3, current:'Shows last 5 logged dates with rating emoji', desired:'', notes:'', domHint:'.date-hist,.date-history'},
+      // GIFT INTEL
+      {id:70, form:'GIFTINTEL',   object:'Hint Card',                    type:'CARD',   trigger:'state', stores:'no', status:'ok',  priority:2, current:'Shows hint name, source, price, linked event, priority dot', desired:'', notes:'', domHint:'.hint-card'},
+      {id:71, form:'GIFTINTEL',   object:'Hint Card — Status Cycle',     type:'BUTTON', trigger:'tap',   stores:'yes',status:'ok',  priority:2, current:'Cycles Active → Bought → Given, persists to storage', desired:'', notes:'', domHint:'.hint-status-btn'},
+      {id:72, form:'GIFTINTEL',   object:'Hint Card — Link Tag',         type:'BUTTON', trigger:'tap',   stores:'no', status:'ok',  priority:3, current:'Tappable link tag opens URL if present on hint', desired:'', notes:'', domHint:'.ht-link,.hint-card a'},
+      {id:73, form:'GIFTINTEL',   object:'Status Filter Chips',          type:'FILTER', trigger:'tap',   stores:'no', status:'ok',  priority:3, current:'Filters by Active / Bought / Given / All', desired:'', notes:'', domHint:'.filters .chip'},
+      {id:74, form:'GIFTINTEL',   object:'Gift Seeds Grid',              type:'SECTION',trigger:'tap',   stores:'no', status:'ok',  priority:3, current:'Expandable inspiration grid: 8 categories, 3 ideas each', desired:'', notes:'', domHint:'.seeds-grid,.seed-card'},
+      {id:75, form:'GIFTINTEL',   object:'Add Hint Modal',               type:'MODAL',  trigger:'tap',   stores:'yes',status:'ok',  priority:2, current:'Name, source, price, priority, event link, notes, URL', desired:'', notes:'', domHint:'.overlay .mtitle'},
+      // COMPLIMENTS
+      {id:80, form:'COMPLIMENTS', object:'Daily Compliment Card',        type:'CARD',   trigger:'state', stores:'no', status:'ok',  priority:2, current:'Shows today\'s scheduled compliment with category badge', desired:'', notes:'', domHint:'.cp-daily,.daily-card'},
+      {id:81, form:'COMPLIMENTS', object:'Daily Card — Mark Delivered',  type:'BUTTON', trigger:'tap',   stores:'yes',status:'ok',  priority:2, current:'Marks delivered, opens reaction picker', desired:'', notes:'', domHint:'.deliver-btn,.cp-deliver'},
+      {id:82, form:'COMPLIMENTS', object:'Daily Card — Refresh',         type:'BUTTON', trigger:'tap',   stores:'no', status:'ok',  priority:3, current:'Gets new compliment, has cooldown to prevent spam', desired:'', notes:'', domHint:'.refresh-btn,.cp-refresh'},
+      {id:83, form:'COMPLIMENTS', object:'Reaction Picker',              type:'MODAL',  trigger:'auto',  stores:'yes',status:'ok',  priority:2, current:'1–4 reaction rating after marking delivered', desired:'', notes:'', domHint:'.reaction-picker'},
+      {id:84, form:'COMPLIMENTS', object:'Custom Compliment Library',    type:'SECTION',trigger:'state', stores:'no', status:'ok',  priority:3, current:'User-written compliments alongside built-in library', desired:'', notes:'', domHint:'.library-list,.cp-library'},
+      {id:85, form:'COMPLIMENTS', object:'Category Stats Bars',          type:'SECTION',trigger:'state', stores:'no', status:'ok',  priority:3, current:'Reaction rating averages per category as bar chart', desired:'', notes:'', domHint:'.stats-bars,.cp-stats'},
+      // OFFERS
+      {id:90, form:'OFFERS',      object:'Offer Card',                   type:'CARD',   trigger:'state', stores:'no', status:'ok',  priority:2, current:'Shows offer type, title, message, ask, status, point tx', desired:'', notes:'', domHint:'.offer-card'},
+      {id:91, form:'OFFERS',      object:'Offer Card — Point Transaction',type:'BADGE', trigger:'state', stores:'no', status:'ok',  priority:2, current:'Shows earn/spend/none tag on offer if point tx attached', desired:'', notes:'', domHint:'.off-pts-tag'},
+      {id:92, form:'OFFERS',      object:'Response Token Paste Box',     type:'INPUT',  trigger:'type',  stores:'yes',status:'ok',  priority:1, current:'She pastes response token → status updates + points applied', desired:'', notes:'', domHint:'.paste-box,.off-paste'},
+      {id:93, form:'OFFERS',      object:'Create Offer Modal — Type',    type:'MODAL',  trigger:'tap',   stores:'no', status:'ok',  priority:2, current:'4 offer types: Chore, Date, Redeem, Custom', desired:'', notes:'', domHint:'.offer-type-btn'},
+      {id:94, form:'OFFERS',      object:'Create Offer Modal — Point Tx',type:'MODAL',  trigger:'tap',   stores:'no', status:'ok',  priority:2, current:'Earn/Spend/None selector, amount input', desired:'', notes:'', domHint:'.off-pts-sel'},
+      // HER WORLD
+      {id:100,form:'HERWORLD',    object:'Profile & Identity Section',   type:'SECTION',trigger:'tap',   stores:'yes',status:'ok',  priority:2, current:'Name, nickname, love language with descriptions', desired:'', notes:'', domHint:'.hw-profile,.profile-section'},
+      {id:101,form:'HERWORLD',    object:'Sizes Section',                type:'SECTION',trigger:'tap',   stores:'yes',status:'ok',  priority:3, current:'Clothing, shoe, ring sizes', desired:'', notes:'', domHint:'.hw-sizes,.sizes-section'},
+      {id:102,form:'HERWORLD',    object:'Favorites & Preferences',      type:'SECTION',trigger:'tap',   stores:'yes',status:'ok',  priority:3, current:'Colors, foods, drinks, hobbies, restaurants', desired:'', notes:'', domHint:'.hw-prefs,.prefs-section'},
+      {id:103,form:'HERWORLD',    object:'Her People Section',           type:'SECTION',trigger:'tap',   stores:'yes',status:'ok',  priority:3, current:'Key people in her life with notes', desired:'', notes:'', domHint:'.hw-people,.people-section'},
+      {id:104,form:'HERWORLD',    object:'Notes Section',                type:'SECTION',trigger:'tap',   stores:'yes',status:'ok',  priority:3, current:'Free-text notes field, auto-saves', desired:'', notes:'', domHint:'.hw-notes,.notes-section'},
+      // SETTINGS
+      {id:110,form:'SETTINGS',    object:'Backup Nudge Banner',          type:'BADGE',  trigger:'state', stores:'no', status:'ok',  priority:2, current:'Appears when ≥10 changes since last backup', desired:'', notes:'', domHint:'.backup-nudge'},
+      {id:111,form:'SETTINGS',    object:'Export Backup Button',         type:'BUTTON', trigger:'tap',   stores:'no', status:'ok',  priority:2, current:'Downloads .hwbackup.json, resets change counter', desired:'', notes:'', domHint:'.btn-exp'},
+      {id:112,form:'SETTINGS',    object:'Import / Restore Button',      type:'BUTTON', trigger:'tap',   stores:'yes',status:'ok',  priority:2, current:'Opens ImportModal with merge/replace modes', desired:'', notes:'', domHint:'.btn-imp'},
+      {id:113,form:'SETTINGS',    object:'Changelog Toggle',             type:'BUTTON', trigger:'tap',   stores:'no', status:'ok',  priority:3, current:'Expands/collapses in-app changelog', desired:'', notes:'', domHint:'.btn-exp'},
+      {id:114,form:'SETTINGS',    object:'Dev Mode Toggle',              type:'TOGGLE', trigger:'tap',   stores:'yes',status:'ok',  priority:3, current:'Shows/hides in-app Dev Toolkit (Layer 1)', desired:'', notes:'', domHint:'.dev-toggle-row,.dev-pill'},
     ];
+
+    // ── DKM Storage (user edits persisted separately from base rows) ──
+    const dkmSaveEdits = () => {
+      try {
+        localStorage.setItem(DKM_KEY, JSON.stringify(
+          DKM_ROWS.map(r => ({id:r.id, desired:r.desired, notes:r.notes, status:r.status, priority:r.priority}))
+        ));
+      } catch(e) {}
+    };
+
+    const dkmLoadEdits = () => {
+      try {
+        const saved = JSON.parse(localStorage.getItem(DKM_KEY)||'null');
+        if (!saved) return;
+        saved.forEach(s => {
+          const r = DKM_ROWS.find(x => x.id === s.id);
+          if (!r) return;
+          if (s.desired  !== undefined) r.desired  = s.desired;
+          if (s.notes    !== undefined) r.notes    = s.notes;
+          if (s.status   !== undefined) r.status   = s.status;
+          if (s.priority !== undefined) r.priority = s.priority;
+        });
+      } catch(e) {}
+    };
+
+    // ── DKM State ─────────────────────────────────────────────────
+    const DKM = {
+      step:'screen', screen:null, rowId:null, typeF:'ALL',
+      _editStatus:'', _editPriority:1, _newStatus:'tbd', _newSnap:null,
+      loaded:false,
+    };
+
+    // ── DKM Init ──────────────────────────────────────────────────
+    const dkmInit = () => {
+      if (!DKM.loaded) { dkmLoadEdits(); DKM.loaded = true; }
+      dkmStep('screen');
+      dkmRenderScreens();
+    };
+
+    // ── DKM Step navigation ───────────────────────────────────────
+    const dkmStep = step => {
+      DKM.step = step;
+      ['screen','object','detail','new'].forEach(s => {
+        const el = $('dkm-step-'+s);
+        if (el) el.style.display = s===step ? '' : 'none';
+      });
+      dkmRenderBreadcrumb();
+    };
+
+    const dkmRenderBreadcrumb = () => {
+      const bc = $('dkm-breadcrumb');
+      if (!bc) return;
+      const parts = ['<span style="color:#555b6e;cursor:pointer" onclick="dkmGoScreen()">All Screens</span>'];
+      if (DKM.screen) {
+        const sm = DKM_SCREENS[DKM.screen]||{icon:'',name:DKM.screen};
+        parts.push('<span style="color:#555b6e"> › </span>');
+        const active = DKM.step==='screen' ? '' : 'cursor:pointer;';
+        parts.push(`<span style="color:#00d9d9;${active}" onclick="dkmGoObjects()">${sm.icon} ${sm.name}</span>`);
+      }
+      if ((DKM.step==='detail'||DKM.step==='new') && DKM.rowId) {
+        const row = DKM_ROWS.find(r => r.id===DKM.rowId);
+        if (row) {
+          parts.push('<span style="color:#555b6e"> › </span>');
+          const name = row.object.length>22 ? row.object.slice(0,20)+'…' : row.object;
+          parts.push(`<span style="color:#f0f2f7">${esc(name)}</span>`);
+        }
+      }
+      if (DKM.step==='new') {
+        parts.push('<span style="color:#555b6e"> › </span>');
+        parts.push('<span style="color:#9d4edd">New Entry</span>');
+      }
+      bc.innerHTML = parts.join('');
+    };
+
+    window.dkmGoScreen  = () => dkmStep('screen');
+    window.dkmGoObjects = () => { dkmRenderTypeRow(); dkmRenderObjects(); dkmStep('object'); };
+
+    // ── Screen grid ───────────────────────────────────────────────
+    const dkmRenderScreens = () => {
+      const grid = $('dkm-screen-grid');
+      if (!grid) return;
+      grid.innerHTML = Object.entries(DKM_SCREENS).map(([key, meta]) => {
+        const rows    = DKM_ROWS.filter(r => r.form===key);
+        const broken  = rows.filter(r => r.status==='broken').length;
+        const partial = rows.filter(r => r.status==='partial').length;
+        const tbd     = rows.filter(r => r.status==='tbd').length;
+        const badge   = broken  ? `<span style="position:absolute;top:5px;right:5px;background:rgba(232,93,76,0.2);color:#e85d4c;font-size:10px;font-weight:800;padding:1px 5px;border-radius:8px">${broken}</span>`
+                      : partial ? `<span style="position:absolute;top:5px;right:5px;background:rgba(255,215,0,0.12);color:#ffd700;font-size:10px;font-weight:800;padding:1px 5px;border-radius:8px">${partial}</span>`
+                      : tbd     ? `<span style="position:absolute;top:5px;right:5px;background:rgba(255,255,255,0.06);color:#555b6e;font-size:10px;padding:1px 5px;border-radius:8px">${tbd}</span>` : '';
+        const border  = broken ? 'rgba(232,93,76,0.3)' : partial ? 'rgba(255,215,0,0.2)' : 'rgba(255,255,255,0.07)';
+        return `<div style="background:#191c25;border:1px solid ${border};border-radius:10px;padding:10px;cursor:pointer;position:relative;-webkit-tap-highlight-color:transparent" onclick="dkmSelectScreen('${key}')">
+          ${badge}
+          <div style="font-size:18px;margin-bottom:5px">${meta.icon}</div>
+          <div style="font-size:12px;font-weight:700;color:#f0f2f7;margin-bottom:2px;line-height:1.2">${meta.name}</div>
+          <div style="font-size:10px;color:#555b6e">${rows.length} objects</div>
+        </div>`;
+      }).join('');
+    };
+
+    window.dkmSelectScreen = key => {
+      DKM.screen = key; DKM.typeF = 'ALL';
+      const s = $('dkm-search'); if (s) s.value = '';
+      dkmRenderTypeRow(); dkmRenderObjects(); dkmStep('object');
+    };
+
+    // ── Object list ───────────────────────────────────────────────
+    const dkmRenderTypeRow = () => {
+      const row = $('dkm-type-row');
+      if (!row) return;
+      const types = [...new Set(DKM_ROWS.filter(r => r.form===DKM.screen).map(r => r.type))];
+      const chip = (label, val, color) => {
+        const sel = DKM.typeF === val;
+        const bg  = sel ? `rgba(${color},0.1)` : '#191c25';
+        const col = sel ? `rgb(${color})`      : '#555b6e';
+        const bdr = sel ? `rgba(${color},0.35)`: 'rgba(255,255,255,0.08)';
+        return `<div style="padding:3px 9px;border-radius:14px;font-size:11px;font-weight:600;border:1px solid ${bdr};background:${bg};color:${col};cursor:pointer;white-space:nowrap;flex-shrink:0" onclick="dkmSetType('${val}')">${label}</div>`;
+      };
+      row.innerHTML = chip('All','ALL','0,217,217') +
+        types.map(t => chip((DKM_TYPE_ICONS[t]||'•')+' '+t, t, '157,78,221')).join('');
+    };
+
+    window.dkmSetType = t => { DKM.typeF = t; dkmRenderTypeRow(); dkmRenderObjects(); };
+
+    const dkmSortRows = (a,b) => {
+      const sv = {broken:0,partial:1,tbd:2,ok:3};
+      if (sv[a.status] !== sv[b.status]) return sv[a.status]-sv[b.status];
+      return a.priority - b.priority;
+    };
+
+    const dkmRenderObjects = () => {
+      const list = $('dkm-obj-list');
+      if (!list) return;
+      const q = (($('dkm-search')||{}).value||'').toLowerCase();
+      const rows = DKM_ROWS.filter(r => {
+        if (r.form !== DKM.screen) return false;
+        if (DKM.typeF !== 'ALL' && r.type !== DKM.typeF) return false;
+        if (q && !(r.object+r.current+r.desired+r.notes).toLowerCase().includes(q)) return false;
+        return true;
+      }).slice().sort(dkmSortRows);
+
+      if (!rows.length) { list.innerHTML='<div style="padding:16px;color:#555b6e;font-size:12px;text-align:center">No objects match</div>'; return; }
+
+      const sc = {ok:'🟢',broken:'🔴',partial:'🟡',tbd:'⚪'};
+      const pc = {'1':'#e85d4c','2':'#ffd700','3':'#555b6e'};
+      list.innerHTML = rows.map(r => {
+        const hasD = r.desired && r.desired.trim();
+        return `<div style="margin:0 8px 5px;background:#131620;border-radius:8px;border:1px solid rgba(255,255,255,0.07);border-left:3px solid ${pc[r.priority]||'#555b6e'};padding:9px 10px;cursor:pointer;display:flex;align-items:center;gap:8px" onclick="dkmSelectRow(${r.id})">
+          <div style="flex:1;min-width:0">
+            <div style="font-size:12px;font-weight:600;color:#f0f2f7;margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(r.object)}</div>
+            <div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center">
+              <span style="font-size:10px">${sc[r.status]||'⚪'}</span>
+              <span style="font-size:10px;color:#555b6e">${DKM_TYPE_ICONS[r.type]||'•'} ${r.type}</span>
+              ${hasD?'<span style="font-size:9px;font-weight:700;color:#00d9d9">✎</span>':''}
+            </div>
+          </div>
+          <div style="color:#555b6e;font-size:14px">›</div>
+        </div>`;
+      }).join('') +
+      `<div style="margin:8px 8px 0;padding:9px 10px;border-radius:8px;border:1px dashed rgba(255,255,255,0.08);cursor:pointer;text-align:center;color:#555b6e;font-size:12px;font-weight:600" onclick="dkmNewRow(null)">+ Add New Object</div>`;
+    };
+
+    // ── Detail view ───────────────────────────────────────────────
+    window.dkmSelectRow = id => {
+      DKM.rowId = id;
+      const row = DKM_ROWS.find(r => r.id===id);
+      DKM._editStatus   = row.status;
+      DKM._editPriority = row.priority;
+      dkmRenderDetail();
+      dkmStep('detail');
+    };
+
+    const STATUS_LABELS = {ok:'🟢 Working',partial:'🟡 Partial',broken:'🔴 Broken',tbd:'⚪ TBD'};
+
+    const dkmRenderDetail = () => {
+      const row = DKM_ROWS.find(r => r.id===DKM.rowId);
+      if (!row) return;
+      const sm = DKM_SCREENS[row.form]||{icon:'',name:row.form};
+
+      const dc = $('dkm-detail-card');
+      if (dc) dc.innerHTML = `
+        <div style="padding:10px 12px;border-bottom:1px solid rgba(255,255,255,0.06)">
+          <div style="font-size:13px;font-weight:700;color:#f0f2f7;margin-bottom:5px">${esc(row.object)}</div>
+          <div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:8px">
+            <span style="font-size:10px;padding:2px 7px;border-radius:10px;background:rgba(0,217,217,0.08);color:#00d9d9;border:1px solid rgba(0,217,217,0.2)">${sm.icon} ${sm.name}</span>
+            <span style="font-size:10px;padding:2px 7px;border-radius:10px;background:rgba(255,255,255,0.05);color:#8b90a0;border:1px solid rgba(255,255,255,0.08)">${row.trigger}</span>
+            ${row.stores==='yes'?'<span style="font-size:10px;padding:2px 7px;border-radius:10px;background:rgba(255,215,0,0.07);color:#ffd700;border:1px solid rgba(255,215,0,0.15)">💾 stores</span>':''}
+          </div>
+          <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:#555b6e;margin-bottom:4px">Current Behavior</div>
+          <div style="font-size:12px;color:#8b90a0;line-height:1.5">${esc(row.current)}</div>
+          ${row.domHint?`<div style="font-size:10px;color:#555b6e;margin-top:5px;font-family:monospace">${esc(row.domHint)}</div>`:''}
+        </div>`;
+
+      const des = $('dkm-desired'), not = $('dkm-notes');
+      if (des) des.value = row.desired||'';
+      if (not) not.value = row.notes||'';
+
+      const sr = $('dkm-status-row');
+      if (sr) sr.innerHTML = ['ok','partial','broken','tbd'].map(s => {
+        const sel = s===row.status;
+        const col = sel ? (s==='ok'?'#3ddc84':s==='partial'?'#ffd700':s==='broken'?'#e85d4c':'#8b90a0') : '#555b6e';
+        const bg  = sel ? (s==='ok'?'rgba(61,220,132,0.12)':s==='partial'?'rgba(255,215,0,0.08)':s==='broken'?'rgba(232,93,76,0.1)':'rgba(255,255,255,0.05)') : '#131620';
+        const bdr = sel ? col.replace(')',', 0.4)').replace('rgb','rgba') : 'rgba(255,255,255,0.08)';
+        return `<button style="flex:1;padding:7px 4px;border-radius:8px;font-size:11px;font-weight:700;border:1px solid ${bdr};background:${bg};color:${col};cursor:pointer" data-s="${s}" onclick="dkmSetStatus('${s}')">${STATUS_LABELS[s]}</button>`;
+      }).join('');
+
+      const pr = $('dkm-pri-row');
+      if (pr) pr.innerHTML = [1,2,3].map(p => {
+        const sel = p===row.priority;
+        const col = p===1?'#e85d4c':p===2?'#ffd700':'#555b6e';
+        const bg  = sel?(p===1?'rgba(232,93,76,0.1)':p===2?'rgba(255,215,0,0.08)':'rgba(255,255,255,0.05)'):'#131620';
+        const bdr = sel?(p===1?'rgba(232,93,76,0.35)':p===2?'rgba(255,215,0,0.3)':'rgba(255,255,255,0.15)'):'rgba(255,255,255,0.08)';
+        const lbl = p===1?'1 — Must fix':p===2?'2 — Should fix':'3 — Nice to have';
+        return `<button style="flex:1;padding:7px 4px;border-radius:8px;font-size:11px;font-weight:700;border:1px solid ${bdr};background:${bg};color:${sel?col:'#555b6e'};cursor:pointer" data-p="${p}" onclick="dkmSetPri(${p})">${lbl}</button>`;
+      }).join('');
+
+      const peers = DKM_ROWS.filter(r => r.form===DKM.screen).slice().sort(dkmSortRows);
+      const idx   = peers.findIndex(r => r.id===DKM.rowId);
+      const nav   = $('dkm-detail-nav');
+      if (nav) nav.innerHTML =
+        (idx>0 ? `<button style="flex:1;padding:8px;border-radius:8px;background:#191c25;border:1px solid rgba(255,255,255,0.08);color:#8b90a0;font-size:12px;font-weight:600;cursor:pointer" onclick="dkmNavDetail(-1)">← Prev</button>` : '') +
+        (idx<peers.length-1 ? `<button style="flex:1;padding:8px;border-radius:8px;background:#191c25;border:1px solid rgba(255,255,255,0.08);color:#8b90a0;font-size:12px;font-weight:600;cursor:pointer" onclick="dkmNavDetail(1)">Next →</button>` : '');
+    };
+
+    window.dkmSetStatus = s => {
+      DKM._editStatus = s;
+      const sr = $('dkm-status-row');
+      if (!sr) return;
+      sr.querySelectorAll('button').forEach(b => {
+        const bs = b.getAttribute('data-s');
+        const sel = bs===s;
+        const col = sel?(bs==='ok'?'#3ddc84':bs==='partial'?'#ffd700':bs==='broken'?'#e85d4c':'#8b90a0'):'#555b6e';
+        const bg  = sel?(bs==='ok'?'rgba(61,220,132,0.12)':bs==='partial'?'rgba(255,215,0,0.08)':bs==='broken'?'rgba(232,93,76,0.1)':'rgba(255,255,255,0.05)'):'#131620';
+        b.style.background=bg; b.style.color=col;
+      });
+    };
+
+    window.dkmSetPri = p => {
+      DKM._editPriority = p;
+      const pr = $('dkm-pri-row');
+      if (!pr) return;
+      pr.querySelectorAll('button').forEach(b => {
+        const bp = parseInt(b.getAttribute('data-p'));
+        const sel= bp===p;
+        const col= bp===1?'#e85d4c':bp===2?'#ffd700':'#555b6e';
+        b.style.color = sel ? col : '#555b6e';
+        b.style.background = sel?(bp===1?'rgba(232,93,76,0.1)':bp===2?'rgba(255,215,0,0.08)':'rgba(255,255,255,0.05)'):'#131620';
+      });
+    };
+
+    window.dkmSaveDetail = (silent) => {
+      const row = DKM_ROWS.find(r => r.id===DKM.rowId);
+      if (!row) return;
+      const des = $('dkm-desired'), not = $('dkm-notes');
+      row.desired  = des ? des.value.trim() : row.desired;
+      row.notes    = not ? not.value.trim() : row.notes;
+      row.status   = DKM._editStatus;
+      row.priority = DKM._editPriority;
+      dkmSaveEdits();
+      if (!silent) { const s=$('dk-sub-toast'); if(s){s.textContent='✓ Saved';setTimeout(()=>{s.textContent='Save Changes';},1500);} }
+    };
+
+    window.dkmNavDetail = dir => {
+      dkmSaveDetail(true);
+      const peers = DKM_ROWS.filter(r => r.form===DKM.screen).slice().sort(dkmSortRows);
+      const idx   = peers.findIndex(r => r.id===DKM.rowId);
+      const next  = peers[idx+dir];
+      if (next) { DKM.rowId=next.id; DKM._editStatus=next.status; DKM._editPriority=next.priority; dkmRenderDetail(); }
+    };
+
+    // ── New row form ──────────────────────────────────────────────
+    window.dkmNewRow = snap => {
+      const ctx = $('dkm-new-ctx'), obj=$('dkm-new-obj'), frm=$('dkm-new-form');
+      const cur = $('dkm-new-current'), des=$('dkm-new-desired'), nsr=$('dkm-new-status-row');
+      if (snap) {
+        if (ctx) ctx.textContent = 'Pre-filled from tapped element — edit as needed.';
+        if (obj) obj.value = snap.object||'';
+        if (frm) frm.value = snap.form||DKM.screen||'DASHBOARD';
+        if (cur) cur.value = snap.current||'';
+      } else {
+        if (ctx) ctx.textContent = 'Describe a new interaction not yet in the map.';
+        if (obj) obj.value = '';
+        if (frm) frm.value = DKM.screen||'DASHBOARD';
+        if (cur) cur.value = '';
+      }
+      if (des) des.value = '';
+      DKM._newStatus = 'tbd';
+      if (nsr) nsr.innerHTML = ['ok','partial','broken','tbd'].map(s => {
+        const lbl = STATUS_LABELS[s];
+        return `<button style="flex:1;padding:6px 3px;border-radius:8px;font-size:10px;font-weight:700;border:1px solid rgba(255,255,255,0.08);background:#131620;color:#555b6e;cursor:pointer" data-s="${s}" onclick="dkmNewSetStatus('${s}')">${lbl}</button>`;
+      }).join('');
+      dkmStep('new');
+    };
+
+    window.dkmNewSetStatus = s => {
+      DKM._newStatus = s;
+      const nsr = $('dkm-new-status-row');
+      if (!nsr) return;
+      nsr.querySelectorAll('button').forEach(b => {
+        const bs = b.getAttribute('data-s');
+        b.style.background  = bs===s?'rgba(0,217,217,0.1)':'#131620';
+        b.style.color       = bs===s?'#00d9d9':'#555b6e';
+        b.style.borderColor = bs===s?'rgba(0,217,217,0.35)':'rgba(255,255,255,0.08)';
+      });
+    };
+
+    window.dkmSaveNew = () => {
+      const obj  = ($('dkm-new-obj')||{}).value||'';
+      const form = ($('dkm-new-form')||{}).value||'DASHBOARD';
+      const cur  = ($('dkm-new-current')||{}).value||'';
+      const des  = ($('dkm-new-desired')||{}).value||'';
+      if (!obj.trim()) return;
+      const newId = Date.now();
+      DKM_ROWS.push({
+        id:newId, form, object:obj.trim(), type:'BUTTON', trigger:'tap',
+        stores:'no', status:DKM._newStatus||'tbd', priority:2,
+        current:cur.trim(), desired:des.trim(), notes:'', domHint:'',
+      });
+      dkmSaveEdits();
+      DKM.screen = form;
+      dkmSelectScreen(form);
+      setTimeout(() => window.dkmSelectRow(newId), 100);
+    };
+
+    window.dkmExport = () => {
+      const out = JSON.stringify(DKM_ROWS.map(r => ({id:r.id,form:r.form,object:r.object,type:r.type,status:r.status,priority:r.priority,current:r.current,desired:r.desired,notes:r.notes})),null,2);
+      if (navigator.share) { navigator.share({title:'Happy Wife Interaction Map',text:out}).catch(()=>{}); return; }
+      if (navigator.clipboard) navigator.clipboard.writeText(out);
+    };
+
+    // ── Screen key resolver (maps HW nav tab to DKM screen key) ───
+    const getScreenKey = () => {
+      const a = document.querySelector('.nbtn.active');
+      if (!a) return 'DASHBOARD';
+      const txt = a.textContent.toLowerCase();
+      if (txt.includes('honey') || txt.includes('do')) return 'HONEYDО';
+      if (txt.includes('reward'))     return 'REWARDS';
+      if (txt.includes('event'))      return 'EVENTS';
+      if (txt.includes('date'))       return 'DATES';
+      if (txt.includes('gift') || txt.includes('intel')) return 'GIFTINTEL';
+      if (txt.includes('compli'))     return 'COMPLIMENTS';
+      if (txt.includes('offer'))      return 'OFFERS';
+      if (txt.includes('her'))        return 'HERWORLD';
+      if (txt.includes('setting'))    return 'SETTINGS';
+      return 'DASHBOARD';
+    };
+
+    // ── Tag bubble confirm/dismiss ────────────────────────────────
+    window.dkmTagConfirm = () => {
+      const savedRowId  = dk._tagRowId;
+      const savedSnap   = dk._tagSnap;
+      const bubble = $('dk-confirm-bubble');
+      if (bubble) bubble.style.display='none';
+      // Switch to Map tab and navigate to row or new-entry form
+      dkmInit();
+      window.dkTab('map');
+      if (!dk.panelOpen) togglePanel();
+      if (savedRowId) {
+        const row = DKM_ROWS.find(r => r.id===savedRowId);
+        if (row) { DKM.screen=row.form; window.dkmSelectRow(row.id); }
+      } else {
+        DKM.screen = savedSnap ? (savedSnap.form||'DASHBOARD') : 'DASHBOARD';
+        dkmRenderTypeRow(); dkmRenderObjects(); dkmStep('object');
+        setTimeout(() => window.dkmNewRow(savedSnap), 150);
+      }
+    };
+
+    window.dkmTagDismiss = () => {
+      const bubble = $('dk-confirm-bubble');
+      if (bubble) bubble.style.display='none';
+      dk.pendingRef = null;
+      dk._tagRowId  = null;
+      dk._tagSnap   = null;
+    };
 
     // ── State ─────────────────────────────────────────────────────
     const dk = {
       visible:false, panelOpen:false, activeTab:'log',
-      activeCat:'bug', activeSev:'functional',
+      activeCat:'bug', activeSev:'functional', activeEntryFilter:'open',
       pendingRef:null, inspecting:false,
       tapCount:0, tapTimer:null,
+      editingId:null,
+      navLog:[], liveCodeMap:null, stateTimer:null,
+      _tagRowId:null, _tagSnap:null,
     };
 
     // ── Helpers ───────────────────────────────────────────────────
-    const esc  = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-    const load = () => { try { return JSON.parse(localStorage.getItem(DK_KEY)||'[]'); } catch(e) { return []; } };
-    const save = log => { try { localStorage.setItem(DK_KEY, JSON.stringify(log)); } catch(e) {} };
-    const rel  = ts => { const d=Math.floor((Date.now()-new Date(ts))/1000); if(d<60) return d+'s ago'; if(d<3600) return Math.floor(d/60)+'m ago'; if(d<86400) return Math.floor(d/3600)+'h ago'; return new Date(ts).toLocaleDateString(); };
-    const getScreen = () => { const a=document.querySelector('.nbtn.active'); return a?a.textContent.trim().replace(/[^\w\s]/g,'').trim():'—'; };
-    const getModal  = () => { const o=document.querySelector('.overlay'); if(!o) return null; const t=o.querySelector('.mtitle'); return t?t.textContent.trim():' modal open'; };
-    const readApp   = () => {
+    const esc   = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    const load  = () => { try { return JSON.parse(localStorage.getItem(DK_KEY)||'[]'); } catch(e) { return []; } };
+    const save  = log => { try { localStorage.setItem(DK_KEY, JSON.stringify(log)); } catch(e) {} };
+    const rel   = ts => { const d=Math.floor((Date.now()-new Date(ts))/1000); if(d<60) return d+'s ago'; if(d<3600) return Math.floor(d/60)+'m ago'; if(d<86400) return Math.floor(d/3600)+'h ago'; return new Date(ts).toLocaleDateString(); };
+    const getScreen  = () => { const a=document.querySelector('.nbtn.active'); return a?a.textContent.trim().replace(/[^\w\s·🏠🛠️🎁📅🍷💡💬📨🌸⚙️]/g,'').trim():'—'; };
+    const getModal   = () => { const o=document.querySelector('.overlay'); if(!o) return null; const t=o.querySelector('.mtitle'); return t?t.textContent.trim():' modal open'; };
+    const readApp    = () => {
       const out = {};
       ['tasks','events','hints','offers','points','taskhist','comphist','datehist'].forEach(k => {
         try { const r=localStorage.getItem(APP_PREFIX+k); if(r!==null) out[k]=JSON.parse(r); } catch(e) {}
       });
       return out;
     };
+
+    // ── Self-regenerating code map ─────────────────────────────────
+    const regenCodeMap = () => {
+      const fns = [];
+      document.querySelectorAll('script').forEach(s => {
+        if (!s.textContent) return;
+        s.textContent.split('\n').forEach((line, i) => {
+          const m = line.match(/^\s*(?:export\s+)?(?:default\s+)?(?:async\s+)?function\s+([\w$]+)\s*\(([^)]*)/)
+                 || line.match(/^\s*(?:export\s+)?const\s+([\w$]+)\s*=\s*(?:async\s*)?\(([^)]*)\)\s*=>/);
+          if (m) fns.push({name:m[1],params:m[2].trim().slice(0,60),line:i+1});
+        });
+      });
+      const components = fns.filter(f => /^[A-Z]/.test(f.name));
+      const helpers    = fns.filter(f => /^[a-z]/.test(f.name));
+      dk.liveCodeMap = {generatedAt:new Date().toISOString(),totalFns:fns.length,componentCount:components.length,helperCount:helpers.length,components:components.map(f=>f.name),helpers:helpers.slice(0,40).map(f=>f.name)};
+    };
+
+    // ── Nav event log ──────────────────────────────────────────────
+    let _lastScreen = '';
+    const trackNav = () => {
+      const cur = getScreen();
+      if (cur !== _lastScreen && cur !== '—') {
+        _lastScreen = cur;
+        dk.navLog.unshift({screen:cur,ts:new Date().toISOString()});
+        if (dk.navLog.length > 8) dk.navLog.pop();
+      }
+    };
+    setInterval(trackNav, 500);
 
     // ── CSS ───────────────────────────────────────────────────────
     const style = document.createElement('style');
@@ -2960,18 +3458,19 @@ export default function App() {
       #dk-toggle:active{transform:scale(.92);}
       #dk-toggle.dk-open{border-color:rgba(0,217,217,.7);box-shadow:0 0 16px rgba(0,217,217,.25);}
       #dk-version{position:fixed;top:8px;right:8px;z-index:9999;padding:2px 7px;border-radius:10px;font-size:9px;letter-spacing:.1em;font-family:'DM Mono',monospace;color:#00d9d9;background:rgba(0,217,217,.1);border:1px solid rgba(0,217,217,.25);display:none;pointer-events:none;}
-      #dk-panel{position:fixed;bottom:0;left:0;right:0;z-index:9999;max-width:480px;margin:0 auto;background:#0d0f14;border:1px solid rgba(255,255,255,.07);border-bottom:none;border-radius:12px 12px 0 0;display:none;flex-direction:column;max-height:72vh;box-shadow:0 -4px 32px rgba(0,0,0,.6);font-family:'DM Mono',monospace;}
+      #dk-panel{position:fixed;inset:0;z-index:9999;background:#0d0f14;border:none;border-radius:0;display:none;flex-direction:column;height:100%;max-height:100%;font-family:'DM Mono',monospace;}
       #dk-panel.dk-vis{display:flex;}
-      #dk-handle{width:34px;height:3px;background:#2a2d3a;border-radius:2px;margin:10px auto 0;flex-shrink:0;cursor:pointer;}
+      #dk-handle{display:none;}
       #dk-hdr{display:flex;align-items:center;gap:6px;padding:8px 12px 6px;flex-shrink:0;border-bottom:1px solid rgba(255,255,255,.06);}
       #dk-hdr-title{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:#00d9d9;flex:1;}
-      #dk-screen-badge{font-size:9px;padding:2px 7px;border-radius:8px;background:rgba(255,255,255,.06);color:#8b90a0;border:1px solid rgba(255,255,255,.08);max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+      #dk-screen-badge{font-size:9px;padding:2px 7px;border-radius:8px;background:rgba(255,255,255,.06);color:#8b90a0;border:1px solid rgba(255,255,255,.08);max-width:80px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
       #dk-modal-badge{font-size:9px;padding:2px 7px;border-radius:8px;background:rgba(157,78,221,.15);color:#c084fc;border:1px solid rgba(157,78,221,.3);display:none;}
       .dk-hdr-btn{padding:4px 7px;border-radius:4px;font-size:9px;letter-spacing:.07em;text-transform:uppercase;background:none;border:1px solid rgba(255,255,255,.1);color:#8b90a0;cursor:pointer;}
       #dk-tabs{display:flex;border-bottom:1px solid rgba(255,255,255,.06);flex-shrink:0;}
       .dk-tab{flex:1;padding:7px 4px;font-size:9px;letter-spacing:.08em;text-transform:uppercase;color:#555b6e;background:none;border:none;border-bottom:2px solid transparent;cursor:pointer;}
       .dk-tab.dk-on{color:#00d9d9;border-bottom-color:#00d9d9;}
-      #dk-body{flex:1;overflow-y:auto;padding:10px 12px 20px;}
+      #dk-body{flex:1;overflow-y:auto;padding:0;}
+      .dk-body-pad{padding:10px 12px 20px;}
       .dk-cats,.dk-sevs,.dk-frow{display:flex;gap:5px;margin-bottom:8px;flex-wrap:wrap;}
       .dk-cat,.dk-sev{padding:4px 9px;border-radius:12px;font-size:9px;letter-spacing:.07em;text-transform:uppercase;border:1px solid rgba(255,255,255,.1);background:none;color:#555b6e;cursor:pointer;}
       .dk-sev{border-radius:5px;flex:1;text-align:center;}
@@ -2979,6 +3478,9 @@ export default function App() {
       .dk-on-ui{background:rgba(0,217,217,.1);border-color:rgba(0,217,217,.3)!important;color:#00d9d9!important;}
       .dk-on-feat{background:rgba(157,78,221,.15);border-color:rgba(157,78,221,.4)!important;color:#9d4edd!important;}
       .dk-on-note{background:rgba(255,215,0,.1);border-color:rgba(255,215,0,.3)!important;color:#ffd700!important;}
+      .dk-on-open{background:rgba(232,93,76,.12);border-color:rgba(232,93,76,.35)!important;color:#e85d4c!important;}
+      .dk-on-resolved{background:rgba(74,124,89,.12);border-color:rgba(74,124,89,.35)!important;color:#7ab88a!important;}
+      .dk-on-all{background:rgba(0,217,217,.08);border-color:rgba(0,217,217,.25)!important;color:#00d9d9!important;}
       .dk-on-cosmetic{background:rgba(0,217,217,.1);border-color:rgba(0,217,217,.3)!important;color:#00d9d9!important;}
       .dk-on-functional{background:rgba(255,215,0,.1);border-color:rgba(255,215,0,.25)!important;color:#ffd700!important;}
       .dk-on-blocking{background:rgba(232,93,76,.15);border-color:rgba(232,93,76,.4)!important;color:#e85d4c!important;}
@@ -2991,6 +3493,7 @@ export default function App() {
       .dk-ref-x{background:none;border:none;color:#555b6e;cursor:pointer;font-size:13px;padding:0 0 0 8px;}
       .dk-sub{width:100%;padding:9px;background:rgba(0,217,217,.12);border:1px solid rgba(0,217,217,.35);border-radius:5px;color:#00d9d9;font-family:'DM Mono',monospace;font-size:10px;letter-spacing:.09em;text-transform:uppercase;cursor:pointer;}
       .dk-entry{padding:8px 10px;background:#191c25;border-radius:6px;margin-bottom:7px;border-left:3px solid #2a2d3a;}
+      .dk-entry.dk-resolved{opacity:.5;}
       .dk-e-bug{border-left-color:#e85d4c!important;} .dk-e-ui{border-left-color:#00d9d9!important;} .dk-e-feat{border-left-color:#9d4edd!important;} .dk-e-note{border-left-color:#ffd700!important;}
       .dk-etop{display:flex;align-items:center;gap:5px;margin-bottom:4px;}
       .dk-bdg{padding:1px 6px;border-radius:8px;font-size:8px;letter-spacing:.07em;text-transform:uppercase;}
@@ -3001,21 +3504,44 @@ export default function App() {
       .dk-b-cos{background:rgba(0,217,217,.08);color:#00d9d9;border:1px solid rgba(0,217,217,.2);}
       .dk-b-fun{background:rgba(255,215,0,.08);color:#ffd700;border:1px solid rgba(255,215,0,.2);}
       .dk-b-blk{background:rgba(232,93,76,.1);color:#e85d4c;border:1px solid rgba(232,93,76,.2);}
+      .dk-b-res{background:rgba(74,124,89,.1);color:#7ab88a;border:1px solid rgba(74,124,89,.2);}
       .dk-escr{font-size:9px;color:#555b6e;margin-left:auto;white-space:nowrap;}
       .dk-emsg{font-size:12px;color:#c8ccd8;line-height:1.5;margin-bottom:3px;}
+      .dk-emsg.dk-editing{display:none;}
+      .dk-edit-ta{width:100%;background:#252938;border:1px solid rgba(0,217,217,.4);border-radius:4px;padding:5px 8px;color:#f0f2f7;font-family:'DM Mono',monospace;font-size:11px;outline:none;resize:none;min-height:48px;margin-bottom:5px;box-sizing:border-box;display:none;}
+      .dk-edit-ta.dk-editing{display:block;}
       .dk-eref{font-size:10px;color:#00d9d9;} .dk-emod{font-size:10px;color:#c084fc;} .dk-ecomp{font-size:10px;color:#8b90a0;}
-      .dk-ebot{display:flex;align-items:center;justify-content:space-between;margin-top:5px;}
-      .dk-ets{font-size:9px;color:#555b6e;}
-      .dk-del{background:none;border:none;color:#555b6e;cursor:pointer;font-size:12px;padding:0;}
-      .dk-del:active{color:#e85d4c;}
+      .dk-ebot{display:flex;align-items:center;justify-content:space-between;margin-top:5px;gap:4px;}
+      .dk-ets{font-size:9px;color:#555b6e;flex:1;}
+      .dk-act{background:none;border:none;color:#555b6e;cursor:pointer;font-size:11px;padding:2px 4px;border-radius:3px;}
+      .dk-act:hover{color:#8b90a0;}
+      .dk-act.dk-res{color:#7ab88a!important;}
       #dk-state{font-size:11px;color:#8b90a0;line-height:1.8;white-space:pre-wrap;background:#191c25;padding:10px 12px;border-radius:6px;border:1px solid rgba(255,255,255,.06);}
       #dk-claude-out{font-size:10px;color:#a8967e;line-height:1.7;white-space:pre-wrap;word-break:break-word;background:#1a1410;padding:10px 12px;border-radius:6px;border:1px solid rgba(201,168,76,.15);margin-bottom:8px;max-height:280px;overflow-y:auto;}
       .dk-cpbtn{width:100%;padding:9px;background:rgba(201,168,76,.12);border:1px solid rgba(201,168,76,.35);border-radius:5px;color:#c9a84c;font-family:'DM Mono',monospace;font-size:10px;letter-spacing:.09em;text-transform:uppercase;cursor:pointer;margin-bottom:6px;}
       .dk-cpbtn.dk-copied{background:rgba(74,124,89,.15);border-color:rgba(74,124,89,.4);color:#7ab88a;}
       #dk-inspect-overlay{position:fixed;inset:0;z-index:9998;background:rgba(0,217,217,.06);pointer-events:none;display:none;}
       #dk-inspect-banner{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:10000;background:#0d0f14;border:1px solid rgba(0,217,217,.5);border-radius:8px;padding:12px 20px;font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:#00d9d9;pointer-events:none;display:none;font-family:'DM Mono',monospace;}
+      #dk-confirm-bubble{position:fixed;z-index:10001;background:#131620;border:1.5px solid rgba(0,217,217,.5);border-radius:12px;padding:12px 14px;min-width:220px;max-width:290px;box-shadow:0 8px 32px rgba(0,0,0,.7);display:none;font-family:'DM Mono',monospace;}
+      #dk-confirm-bubble .dk-cb-title{font-size:10px;font-weight:700;color:#00d9d9;margin-bottom:4px;text-transform:uppercase;letter-spacing:.04em;}
+      #dk-confirm-bubble .dk-cb-el{font-size:13px;font-weight:600;color:#f0f2f7;margin-bottom:3px;line-height:1.3;}
+      #dk-confirm-bubble .dk-cb-ctx{font-size:11px;color:#555b6e;margin-bottom:10px;line-height:1.4;}
+      #dk-confirm-bubble .dk-cb-btns{display:flex;gap:6px;}
+      #dk-confirm-bubble .dk-cb-btn{flex:1;padding:8px 6px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;border:1px solid;}
+      .dk-cb-map{background:rgba(0,217,217,.12);border-color:rgba(0,217,217,.35)!important;color:#00d9d9;}
+      .dk-cb-log{background:#191c25;border-color:rgba(255,255,255,.1)!important;color:#8b90a0;}
       .dk-flash{outline:2px solid #00d9d9!important;outline-offset:2px!important;}
       .dk-empty{text-align:center;padding:28px 16px;color:#555b6e;font-size:12px;}
+      #dkm-breadcrumb{padding:8px 12px;border-bottom:1px solid rgba(255,255,255,.06);font-size:11px;display:flex;align-items:center;gap:3px;background:#0d0f14;flex-shrink:0;}
+      #dkm-screen-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:8px 10px;}
+      #dkm-type-row{display:flex;gap:5px;padding:6px 10px 4px;overflow-x:auto;scrollbar-width:none;flex-shrink:0;}
+      #dkm-type-row::-webkit-scrollbar{display:none;}
+      #dkm-search{width:100%;background:#1f2330;border:1px solid rgba(255,255,255,.1);color:#f0f2f7;font-size:12px;padding:7px 10px;border-radius:8px;outline:none;font-family:'DM Mono',monospace;box-sizing:border-box;}
+      #dkm-search:focus{border-color:rgba(0,217,217,.4);}
+      .dkm-ta{width:100%;background:#1f2330;border:1px solid rgba(255,255,255,.1);color:#f0f2f7;font-size:13px;padding:8px;border-radius:7px;font-family:'DM Mono',monospace;resize:none;line-height:1.5;outline:none;box-sizing:border-box;}
+      .dkm-ta:focus{border-color:rgba(0,217,217,.4);}
+      .dkm-lbl{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#555b6e;margin-bottom:5px;margin-top:8px;}
+      #dk-sub-toast{width:100%;margin-top:8px;padding:11px;border-radius:10px;background:#00d9d9;color:#000;font-size:13px;font-weight:700;border:none;cursor:pointer;}
     `;
     document.head.appendChild(style);
 
@@ -3024,16 +3550,15 @@ export default function App() {
 
     const mkEl = (tag, id, html='') => {
       const el = document.createElement(tag);
-      el.id = id;
-      if (html) el.innerHTML = html;
-      document.body.appendChild(el);
-      return el;
+      el.id = id; if (html) el.innerHTML = html;
+      document.body.appendChild(el); return el;
     };
 
     mkEl('div','dk-toggle','🐛');
     mkEl('div','dk-version','DEV v'+DK_VERSION);
     mkEl('div','dk-inspect-overlay');
     mkEl('div','dk-inspect-banner','TAP ANY ELEMENT TO TAG IT');
+    mkEl('div','dk-confirm-bubble');
 
     const panel = mkEl('div','dk-panel');
     panel.innerHTML = `
@@ -3044,10 +3569,13 @@ export default function App() {
         <span id="dk-modal-badge">📱 modal</span>
         <button class="dk-hdr-btn" onclick="dkInspect()">🔍 Inspect</button>
         <button class="dk-hdr-btn" onclick="dkExport()">⬆ Export</button>
+        <button class="dk-hdr-btn" onclick="dkmExport()">🗺 Map</button>
+        <button class="dk-hdr-btn" onclick="dkClose()" style="margin-left:auto;border-color:rgba(255,255,255,.18);color:#8b90a0;font-size:14px;padding:2px 8px;" title="Close DevKit">✕</button>
       </div>
       <div id="dk-tabs">
         <button class="dk-tab dk-on" onclick="dkTab('log')">Log</button>
         <button class="dk-tab" onclick="dkTab('entries')">Entries</button>
+        <button class="dk-tab" onclick="dkTab('map')">🗺 Map</button>
         <button class="dk-tab" onclick="dkTab('state')">State</button>
         <button class="dk-tab" onclick="dkTab('claude')">→ Claude</button>
       </div>
@@ -3056,331 +3584,348 @@ export default function App() {
 
     // ── Render: Log tab ───────────────────────────────────────────
     const renderLog = () => {
-      const CATS  = {bug:'🐛 Bug',ui:'🎨 UI',feat:'✨ Feature',note:'📝 Note'};
-      const SEVS  = {cosmetic:'👁 Cosmetic',functional:'⚠ Functional',blocking:'🚨 Blocking'};
+      const CATS = {bug:'🐛 Bug',ui:'🎨 UI',feat:'✨ Feature',note:'📝 Note'};
+      const SEVS = {cosmetic:'👁 Cosmetic',functional:'⚠ Functional',blocking:'🚨 Blocking'};
       const catBtns = Object.entries(CATS).map(([c,l]) =>
         `<button class="dk-cat${dk.activeCat===c?' dk-on-'+c:''}" onclick="dkCat('${c}')">${l}</button>`).join('');
       const sevBtns = Object.entries(SEVS).map(([s,l]) =>
         `<button class="dk-sev${dk.activeSev===s?' dk-on-'+s:''}" onclick="dkSev('${s}')">${l}</button>`).join('');
-      const dl = DK_COMPS.map(c=>`<option value="${c}">`).join('');
       const refHidden = dk.pendingRef ? '' : ' dk-gone';
-      $('dk-body').innerHTML = `
+      $('dk-body').innerHTML = `<div class="dk-body-pad">
         <div class="dk-cats">${catBtns}</div>
         <div class="dk-sevs">${sevBtns}</div>
-        <datalist id="dk-dl">${dl}</datalist>
-        <input class="dk-inp" id="dk-comp" list="dk-dl" placeholder="Component ID  (e.g. hd·task-card)" autocomplete="off"/>
         <div class="dk-ref-chip${refHidden}" id="dk-rchip">
           <span>🔍 ${esc(dk.pendingRef||'')}</span>
           <button class="dk-ref-x" onclick="dkClearRef()">✕</button>
         </div>
         <textarea class="dk-ta" id="dk-msg" placeholder="Describe the issue, feature, or note…"></textarea>
         <button class="dk-sub" id="dk-sub" onclick="dkSubmit()">Add Entry →</button>
-      `;
+      </div>`;
     };
 
     // ── Render: Entries tab ───────────────────────────────────────
-    const renderEntries = (filterCat=null) => {
-      const log = load();
-      const shown = filterCat ? log.filter(e=>e.cat===filterCat) : log;
-      const CATS = {bug:'🐛',ui:'🎨',feat:'✨',note:'📝'};
-      const sevClass = {cosmetic:'dk-b-cos',functional:'dk-b-fun',blocking:'dk-b-blk'};
+    const renderEntries = () => {
+      const log  = load();
+      const filt = dk.activeEntryFilter;
+      const shown = filt==='all'?log:log.filter(e=>filt==='resolved'?!!e.resolved:!e.resolved);
+      const openCnt=log.filter(e=>!e.resolved).length, resCnt=log.filter(e=>!!e.resolved).length;
+      const sevClass={cosmetic:'dk-b-cos',functional:'dk-b-fun',blocking:'dk-b-blk'};
       const filterBtns = [
-        `<button class="dk-cat${!filterCat?' dk-on-ui':''}" onclick="dkFilt(null)">All (${log.length})</button>`,
-        ...Object.entries(CATS).map(([c,icon]) => {
-          const cnt = log.filter(e=>e.cat===c).length;
-          return `<button class="dk-cat${filterCat===c?' dk-on-'+c:''}" onclick="dkFilt('${c}')">${icon} ${c} (${cnt})</button>`;
-        })
+        `<button class="dk-cat${filt==='open'?' dk-on-open':''}" onclick="dkEntFilt('open')">Open (${openCnt})</button>`,
+        `<button class="dk-cat${filt==='resolved'?' dk-on-resolved':''}" onclick="dkEntFilt('resolved')">Resolved (${resCnt})</button>`,
+        `<button class="dk-cat${filt==='all'?' dk-on-all':''}" onclick="dkEntFilt('all')">All (${log.length})</button>`,
       ].join('');
-      const items = shown.length === 0
-        ? '<div class="dk-empty">No entries yet.</div>'
-        : shown.map(e => {
-            const sev  = e.sev  ? `<span class="dk-bdg ${sevClass[e.sev]||''}">${e.sev}</span>` : '';
-            const comp = e.comp ? `<div class="dk-ecomp">📍 ${esc(e.comp)}</div>` : '';
-            const ref  = e.ref  ? `<div class="dk-eref">🔍 ${esc(e.ref)}</div>` : '';
-            const mod  = e.modal? `<div class="dk-emod">📱 ${esc(e.modal)}</div>` : '';
-            return `
-              <div class="dk-entry dk-e-${e.cat}">
-                <div class="dk-etop">
-                  <span class="dk-bdg dk-b-${e.cat}">${e.cat}</span>${sev}
-                  <span class="dk-escr">${esc(e.screen||'')}</span>
-                </div>
-                <div class="dk-emsg">${esc(e.msg)}</div>
-                ${comp}${ref}${mod}
-                <div class="dk-ebot">
-                  <span class="dk-ets">${rel(e.ts)}</span>
-                  <button class="dk-del" onclick="dkDel(${e.id})">✕</button>
-                </div>
-              </div>`;
-          }).join('');
-      $('dk-body').innerHTML = `<div class="dk-frow">${filterBtns}</div>${items}`;
+      const items = shown.length===0 ? '<div class="dk-empty">Nothing here.</div>' : shown.map(e => {
+        const sev=e.sev?`<span class="dk-bdg ${sevClass[e.sev]||''}">${e.sev}</span>`:'';
+        const resBdg=e.resolved?`<span class="dk-bdg dk-b-res">resolved</span>`:'';
+        const comp=e.comp?`<div class="dk-ecomp">📍 ${esc(e.comp)}</div>`:'';
+        const ref=e.ref?`<div class="dk-eref">🔍 ${esc(e.ref)}</div>`:'';
+        const mod=e.modal?`<div class="dk-emod">📱 ${esc(e.modal)}</div>`:'';
+        const isEdit=dk.editingId===e.id;
+        return `<div class="dk-entry dk-e-${e.cat}${e.resolved?' dk-resolved':''}">
+          <div class="dk-etop"><span class="dk-bdg dk-b-${e.cat}">${e.cat}</span>${sev}${resBdg}<span class="dk-escr">${esc(e.screen||'')}</span></div>
+          <div class="dk-emsg${isEdit?' dk-editing':''}">${esc(e.msg)}</div>
+          <textarea class="dk-edit-ta${isEdit?' dk-editing':''}" id="dk-eta-${e.id}" onblur="dkSaveEdit(${e.id})">${esc(e.msg)}</textarea>
+          ${comp}${ref}${mod}
+          <div class="dk-ebot">
+            <span class="dk-ets">${rel(e.ts)}</span>
+            <button class="dk-act" title="Edit" onclick="dkStartEdit(${e.id})">✏️</button>
+            <button class="dk-act${e.resolved?' dk-res':''}" title="${e.resolved?'Reopen':'Resolve'}" onclick="dkToggleResolve(${e.id})">${e.resolved?'↩':'✓'}</button>
+            <button class="dk-act" title="Delete" onclick="dkDel(${e.id})" style="color:rgba(232,93,76,.5)">✕</button>
+          </div>
+        </div>`;
+      }).join('');
+      $('dk-body').innerHTML = `<div class="dk-body-pad"><div class="dk-frow">${filterBtns}</div>${items}</div>`;
+    };
+
+    // ── Render: Map tab ───────────────────────────────────────────
+    const renderMap = () => {
+      dkmInit();
+      $('dk-body').innerHTML = `
+        <div id="dkm-breadcrumb"></div>
+        <div style="flex:1;overflow-y:auto" id="dkm-scroll">
+          <div id="dkm-step-screen">
+            <div style="padding:6px 12px 4px;font-size:11px;color:#555b6e">Select a screen to view its interactions:</div>
+            <div id="dkm-screen-grid"></div>
+          </div>
+          <div id="dkm-step-object" style="display:none">
+            <div style="padding:6px 10px 0"><input id="dkm-search" placeholder="🔍 Filter objects…" oninput="dkmRenderObjects()"></div>
+            <div id="dkm-type-row"></div>
+            <div id="dkm-obj-list" style="padding:4px 0 8px"></div>
+          </div>
+          <div id="dkm-step-detail" style="display:none;padding:8px 10px 12px">
+            <div id="dkm-detail-card" style="background:#191c25;border:1px solid rgba(255,255,255,.07);border-radius:10px;margin-bottom:10px;overflow:hidden"></div>
+            <div style="background:#191c25;border:1px solid rgba(255,255,255,.07);border-radius:10px;overflow:hidden">
+              <div style="padding:10px 12px;border-bottom:1px solid rgba(255,255,255,.06)">
+                <div class="dkm-lbl" style="margin-top:0">Desired Outcome</div>
+                <textarea id="dkm-desired" class="dkm-ta" rows="4" placeholder="What should happen? Describe exact UI behavior…"></textarea>
+                <div class="dkm-lbl">Notes / Edge Cases</div>
+                <textarea id="dkm-notes" class="dkm-ta" rows="2" placeholder="Edge cases, related IDs, implementation context…"></textarea>
+              </div>
+              <div style="padding:8px 12px;border-bottom:1px solid rgba(255,255,255,.06)">
+                <div class="dkm-lbl" style="margin-top:0">Status</div>
+                <div style="display:flex;gap:5px" id="dkm-status-row"></div>
+              </div>
+              <div style="padding:8px 12px">
+                <div class="dkm-lbl" style="margin-top:0">Priority</div>
+                <div style="display:flex;gap:5px" id="dkm-pri-row"></div>
+              </div>
+            </div>
+            <div style="display:flex;gap:6px;margin-top:8px" id="dkm-detail-nav"></div>
+            <button id="dk-sub-toast" onclick="dkmSaveDetail()">Save Changes</button>
+          </div>
+          <div id="dkm-step-new" style="display:none;padding:8px 10px 12px">
+            <div style="font-size:12px;color:#8b90a0;margin-bottom:10px;line-height:1.5" id="dkm-new-ctx"></div>
+            <div style="background:#191c25;border:1px solid rgba(255,255,255,.07);border-radius:10px;overflow:hidden">
+              <div style="padding:10px 12px;border-bottom:1px solid rgba(255,255,255,.06)">
+                <div class="dkm-lbl" style="margin-top:0">Object Name</div>
+                <input id="dkm-new-obj" class="dk-inp" style="margin-bottom:0" placeholder="e.g. Task Card — Complete Button">
+                <div class="dkm-lbl">Screen</div>
+                <select id="dkm-new-form" class="dk-inp" style="margin-bottom:0">
+                  ${Object.entries(DKM_SCREENS).map(([k,v])=>`<option value="${k}">${v.icon} ${v.name}</option>`).join('')}
+                </select>
+                <div class="dkm-lbl">Current Behavior</div>
+                <textarea id="dkm-new-current" class="dkm-ta" rows="2" placeholder="What does it do now?"></textarea>
+                <div class="dkm-lbl">Desired Outcome</div>
+                <textarea id="dkm-new-desired" class="dkm-ta" rows="3" placeholder="What should happen instead?"></textarea>
+              </div>
+              <div style="padding:8px 12px;display:flex;gap:5px" id="dkm-new-status-row"></div>
+            </div>
+            <button style="width:100%;margin-top:8px;padding:11px;border-radius:10px;background:#00d9d9;color:#000;font-size:13px;font-weight:700;border:none;cursor:pointer" onclick="dkmSaveNew()">Add to Map</button>
+          </div>
+        </div>`;
+      dkmRenderScreens();
     };
 
     // ── Render: State tab ─────────────────────────────────────────
     const renderState = () => {
-      $('dk-body').innerHTML = '<pre id="dk-state"></pre>';
-      const s = readApp();
-      const tasks = s.tasks||[], hints = s.hints||[], offers = s.offers||[];
-      $('dk-state').textContent = [
-        `── HAPPY WIFE STATE  ·  v${APP_VER} ──`,
-        '',
-        `SCREEN:      ${getScreen()}`,
-        `MODAL:       ${getModal()||'none'}`,
-        '',
-        `── POINTS ──`,
-        `Balance:     ${s.points||0} pts`,
-        '',
-        `── TASKS ──`,
-        `Total:       ${tasks.length}`,
+      $('dk-body').innerHTML = '<div class="dk-body-pad"><pre id="dk-state">Loading…</pre></div>';
+      updateState();
+    };
+    const updateState = () => {
+      const el = $('dk-state'); if (!el) return;
+      const s=readApp(), tasks=s.tasks||[], hints=s.hints||[], offers=s.offers||[];
+      const brokenRows = DKM_ROWS.filter(r=>r.status==='broken').length;
+      const partialRows= DKM_ROWS.filter(r=>r.status==='partial').length;
+      el.textContent = [
+        `── HAPPY WIFE  ·  v${APP_VER} ──`,``,
+        `SCREEN:      ${getScreen()}`,`MODAL:       ${getModal()||'none'}`,``,
+        `── POINTS ──`,`Balance:     ${s.points||0} pts`,``,
+        `── TASKS ──`,`Total:       ${tasks.length}`,
         `Pending:     ${tasks.filter(t=>t.status==='pending').length}`,
         `Completed:   ${tasks.filter(t=>t.status==='completed').length}`,
-        `Recurring:   ${tasks.filter(t=>t.recurring).length}`,
-        '',
+        `Recurring:   ${tasks.filter(t=>t.recurring).length}`,``,
         `── GIFT INTEL ──`,
         `Active:      ${hints.filter(h=>h.status==='active').length}`,
-        `Bought:      ${hints.filter(h=>h.status==='bought').length}`,
-        '',
-        `── OFFERS ──`,
-        `Total:       ${offers.length}`,
-        `Pending:     ${offers.filter(o=>o.status==='pending').length}`,
-        `Accepted:    ${offers.filter(o=>o.status==='accepted').length}`,
-        '',
-        `── HISTORY ──`,
-        `Task log:    ${(s.taskhist||[]).length} entries`,
-        `Compliments: ${(s.comphist||[]).length} delivered`,
-        `Dates:       ${(s.datehist||[]).length} logged`,
-        '',
+        `Bought:      ${hints.filter(h=>h.status==='bought').length}`,``,
+        `── OFFERS ──`,`Total:       ${offers.length}`,
+        `Pending:     ${offers.filter(o=>o.status==='pending').length}`,``,
+        `── MAP STATUS ──`,
+        `Total rows:  ${DKM_ROWS.length}`,
+        `Broken:      ${brokenRows}`,`Partial:     ${partialRows}`,
+        `TBD:         ${DKM_ROWS.filter(r=>r.status==='tbd').length}`,``,
+        `── NAV LOG ──`,
+        ...dk.navLog.map(n=>`  ${n.screen.slice(0,18).padEnd(18)} ${rel(n.ts)}`),``,
         `── DEVKIT ──`,
-        `Log entries: ${load().length}`,
+        `Log:         ${load().length} entries (${load().filter(e=>!e.resolved).length} open)`,
+        `Code map:    ${dk.liveCodeMap?dk.liveCodeMap.totalFns+' fns':'—'}`,
         `Refreshed:   ${new Date().toLocaleTimeString()}`,
       ].join('\n');
     };
 
     // ── Render: Claude tab ────────────────────────────────────────
     const buildClaudeBlock = () => {
-      const log   = load();
-      const bugs  = log.filter(e=>e.cat==='bug');
-      const ui    = log.filter(e=>e.cat==='ui');
-      const feats = log.filter(e=>e.cat==='feat');
-      const notes = log.filter(e=>e.cat==='note');
-      const s     = readApp();
-      const tasks = s.tasks||[], hints = s.hints||[], offers = s.offers||[];
-      const lines = [
-        `=== HAPPY WIFE DEV HANDOFF ===`,
-        `App:     Happy Wife v${APP_VER}`,
-        `Date:    ${new Date().toLocaleDateString('en-US',{weekday:'long',year:'numeric',month:'long',day:'numeric'})}`,
-        '',
-      ];
-      if (bugs.length) {
-        lines.push(`── BUGS (${bugs.length}) ──`);
-        bugs.forEach((e,i) => {
-          lines.push(`${i+1}. [${(e.sev||'?').toUpperCase()}] ${e.comp?'['+e.comp+'] ':''}${e.msg}`);
-          if (e.ref)   lines.push(`   Element: ${e.ref}`);
-          if (e.modal) lines.push(`   Context: ${e.modal}`);
-          lines.push(`   Screen: ${e.screen||'?'} · ${rel(e.ts)}`);
-        });
-        lines.push('');
-      }
-      if (ui.length) {
-        lines.push(`── UI ISSUES (${ui.length}) ──`);
-        ui.forEach((e,i) => {
-          lines.push(`${i+1}. ${e.comp?'['+e.comp+'] ':''}${e.msg}`);
-          if (e.ref) lines.push(`   Element: ${e.ref}`);
-          lines.push(`   Screen: ${e.screen||'?'}`);
-        });
-        lines.push('');
-      }
-      if (feats.length) {
-        lines.push(`── FEATURE REQUESTS (${feats.length}) ──`);
-        feats.forEach((e,i) => lines.push(`${i+1}. ${e.msg}`));
-        lines.push('');
-      }
-      if (notes.length) {
-        lines.push(`── NOTES (${notes.length}) ──`);
-        notes.forEach((e,i) => lines.push(`${i+1}. ${e.msg}`));
-        lines.push('');
-      }
+      const log=load(), s=readApp();
+      const bugs=log.filter(e=>e.cat==='bug'&&!e.resolved);
+      const ui=log.filter(e=>e.cat==='ui'&&!e.resolved);
+      const feats=log.filter(e=>e.cat==='feat'&&!e.resolved);
+      const notes=log.filter(e=>e.cat==='note');
+      const tasks=s.tasks||[], hints=s.hints||[], offers=s.offers||[];
+      const brokenMap=DKM_ROWS.filter(r=>r.status==='broken'&&r.desired);
+      const cm=dk.liveCodeMap;
+      const lines=[`=== HAPPY WIFE DEV HANDOFF ===`,`App: Happy Wife v${APP_VER}`,`Date: ${new Date().toLocaleDateString('en-US',{weekday:'long',year:'numeric',month:'long',day:'numeric'})}`,``];
+      if(bugs.length){lines.push(`── BUGS (${bugs.length}) ──`);bugs.forEach((e,i)=>{lines.push(`${i+1}. [${(e.sev||'?').toUpperCase()}] ${e.comp?'['+e.comp+'] ':''}${e.msg}`);if(e.ref)lines.push(`   Element: ${e.ref}`);if(e.modal)lines.push(`   Context: ${e.modal}`);lines.push(`   Screen: ${e.screen||'?'} · ${rel(e.ts)}`);});lines.push('');}
+      if(ui.length){lines.push(`── UI ISSUES (${ui.length}) ──`);ui.forEach((e,i)=>{lines.push(`${i+1}. ${e.comp?'['+e.comp+'] ':''}${e.msg}`);if(e.ref)lines.push(`   Element: ${e.ref}`);lines.push(`   Screen: ${e.screen||'?'}`);});lines.push('');}
+      if(feats.length){lines.push(`── FEATURE REQUESTS (${feats.length}) ──`);feats.forEach((e,i)=>lines.push(`${i+1}. ${e.msg}`));lines.push('');}
+      if(notes.length){lines.push(`── NOTES (${notes.length}) ──`);notes.forEach((e,i)=>lines.push(`${i+1}. ${e.msg}`));lines.push('');}
+      if(brokenMap.length){lines.push(`── MAP — BROKEN + DESIRED (${brokenMap.length}) ──`);brokenMap.forEach((r,i)=>lines.push(`${i+1}. [${r.form}] ${r.object}: ${r.desired}`));lines.push('');}
       lines.push(`── APP SNAPSHOT ──`);
-      lines.push(`Points:      ${s.points||0}`);
-      lines.push(`Tasks:       ${tasks.length} total, ${tasks.filter(t=>t.status==='pending').length} pending`);
-      lines.push(`Hints:       ${hints.filter(h=>h.status==='active').length} active`);
-      lines.push(`Offers:      ${offers.length} total`);
-      lines.push(`Compliments: ${(s.comphist||[]).length} delivered`);
-      lines.push('');
-      lines.push(`=== END HANDOFF ===`);
+      lines.push(`Points: ${s.points||0}  Tasks: ${tasks.length} (${tasks.filter(t=>t.status==='pending').length} pending)  Hints: ${hints.filter(h=>h.status==='active').length} active  Offers: ${offers.length}`);
+      if(cm){lines.push('');lines.push(`── CODE MAP ──`);lines.push(`${cm.totalFns} fns · ${cm.componentCount} components · ${cm.helperCount} helpers`);lines.push(`Components: ${cm.components.join(', ')}`);}
+      lines.push('');lines.push(`=== END HANDOFF ===`);
       return lines.join('\n');
     };
-
     const renderClaude = () => {
-      const txt = buildClaudeBlock();
-      $('dk-body').innerHTML = `
-        <div style="font-size:10px;color:#5a4d3a;margin-bottom:8px;line-height:1.5;">
-          Copy this block and paste it as your <strong style="color:#a8967e">first message</strong> in a new Claude session.
-        </div>
+      const txt=buildClaudeBlock();
+      $('dk-body').innerHTML=`<div class="dk-body-pad">
+        <div style="font-size:10px;color:#5a4d3a;margin-bottom:8px;line-height:1.5">Paste this as your <strong style="color:#a8967e">first message</strong> in a new Claude session.</div>
         <pre id="dk-claude-out">${esc(txt)}</pre>
         <button class="dk-cpbtn" id="dk-cc" onclick="dkCopyC()">📋 Copy Handoff Block</button>
-        <button class="dk-cpbtn" style="background:rgba(255,255,255,.04);border-color:rgba(255,255,255,.1);color:#555b6e;" onclick="dkTab('claude')">↺ Refresh</button>
-      `;
+        <button class="dk-cpbtn" style="background:rgba(255,255,255,.04);border-color:rgba(255,255,255,.1);color:#555b6e" onclick="dkTab('claude')">↺ Refresh</button>
+      </div>`;
     };
 
-    // ── Global functions (called from inline onclick) ──────────────
+    // ── Global functions ──────────────────────────────────────────
     window.dkTab = name => {
-      dk.activeTab = name;
-      document.querySelectorAll('.dk-tab').forEach((t,i) => {
-        t.classList.toggle('dk-on', ['log','entries','state','claude'][i]===name);
-      });
-      if (name==='log')     renderLog();
-      if (name==='entries') renderEntries();
-      if (name==='state')   renderState();
-      if (name==='claude')  renderClaude();
+      dk.activeTab=name;
+      if(name!=='state'&&dk.stateTimer){clearInterval(dk.stateTimer);dk.stateTimer=null;}
+      document.querySelectorAll('.dk-tab').forEach((t,i)=>t.classList.toggle('dk-on',['log','entries','map','state','claude'][i]===name));
+      if(name==='log')     renderLog();
+      if(name==='entries') renderEntries();
+      if(name==='map')     renderMap();
+      if(name==='state')   { renderState(); if(!dk.stateTimer) dk.stateTimer=setInterval(()=>{if(dk.panelOpen&&dk.activeTab==='state') updateState();},2000); }
+      if(name==='claude')  renderClaude();
     };
-
-    window.dkCat   = c  => { dk.activeCat = c;   renderLog(); };
-    window.dkSev   = s  => {
-      const msg  = ($('dk-msg')||{}).value||'';
-      const comp = ($('dk-comp')||{}).value||'';
-      dk.activeSev = s;
-      renderLog();
-      setTimeout(() => { if($('dk-msg')) $('dk-msg').value=msg; if($('dk-comp')) $('dk-comp').value=comp; }, 0);
-    };
-    window.dkFilt  = cat => renderEntries(cat);
-    window.dkDel   = id  => { save(load().filter(e=>e.id!==id)); renderEntries(); };
-    window.dkClearRef = () => { dk.pendingRef=null; const c=$('dk-rchip'); if(c) c.classList.add('dk-gone'); };
-
+    window.dkCat   = c => { dk.activeCat=c; renderLog(); };
+    window.dkSev   = s => { const msg=($('dk-msg')||{}).value||''; dk.activeSev=s; renderLog(); setTimeout(()=>{if($('dk-msg'))$('dk-msg').value=msg;},0); };
+    window.dkEntFilt = f => { dk.activeEntryFilter=f; renderEntries(); };
+    window.dkDel     = id => { save(load().filter(e=>e.id!==id)); renderEntries(); };
+    window.dkClearRef = () => { dk.pendingRef=null; const c=$('dk-rchip'); if(c)c.classList.add('dk-gone'); };
+    window.dkToggleResolve = id => { const log=load(); save(log.map(e=>e.id===id?{...e,resolved:!e.resolved,resolvedAt:!e.resolved?new Date().toISOString():null}:e)); renderEntries(); };
+    window.dkStartEdit = id => { dk.editingId=id; renderEntries(); setTimeout(()=>{const ta=$('dk-eta-'+id);if(ta){ta.focus();ta.setSelectionRange(ta.value.length,ta.value.length);}},50); };
+    window.dkSaveEdit  = id => { const ta=$('dk-eta-'+id); if(!ta)return; const msg=ta.value.trim(); if(msg){const log=load();save(log.map(e=>e.id===id?{...e,msg,editedAt:new Date().toISOString()}:e));} dk.editingId=null; renderEntries(); };
     window.dkSubmit = () => {
-      const msg  = ($('dk-msg')||{}).value||'';
-      const comp = ($('dk-comp')||{}).value||'';
-      if (!msg.trim()) return;
-      const entry = {
-        id:Date.now(), ts:new Date().toISOString(),
-        cat:dk.activeCat, sev:dk.activeSev,
-        msg:msg.trim(), comp:comp.trim()||null,
-        screen:getScreen(), modal:getModal(), ref:dk.pendingRef,
-      };
-      const log = load(); log.unshift(entry); save(log);
-      dk.pendingRef = null;
+      const msg=($('dk-msg')||{}).value||''; if(!msg.trim())return;
+      const entry={id:Date.now(),ts:new Date().toISOString(),cat:dk.activeCat,sev:dk.activeSev,msg:msg.trim(),screen:getScreen(),modal:getModal(),ref:dk.pendingRef,resolved:false};
+      const log=load();log.unshift(entry);save(log);dk.pendingRef=null;
       renderLog();
-      const sub = $('dk-sub');
-      if (sub) { sub.textContent='✓ Saved'; setTimeout(()=>{ if($('dk-sub')) $('dk-sub').textContent='Add Entry →'; },1200); }
+      const sub=$('dk-sub');if(sub){sub.textContent='✓ Saved';setTimeout(()=>{if($('dk-sub'))$('dk-sub').textContent='Add Entry →';},1200);}
     };
-
-    window.dkExport = () => {
-      const payload = JSON.stringify({_devkit:true,_exported:new Date().toISOString(),_appVersion:'Happy Wife v'+APP_VER,entries:load()},null,2);
-      if (navigator.share) navigator.share({title:'DevKit Log',text:payload}).catch(()=>{});
-      else if (navigator.clipboard) navigator.clipboard.writeText(payload);
-    };
-
-    window.dkCopyC = () => {
-      const txt = buildClaudeBlock();
-      const btn = $('dk-cc');
-      const copy = () => { if(btn){btn.textContent='✓ Copied!';btn.classList.add('dk-copied');setTimeout(()=>{btn.textContent='📋 Copy Handoff Block';btn.classList.remove('dk-copied');},2500);} };
-      if (navigator.clipboard) navigator.clipboard.writeText(txt).then(copy);
-      else { const ta=document.createElement('textarea');ta.value=txt;ta.style.position='fixed';ta.style.opacity='0';document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta);copy(); }
-    };
+    window.dkExport = () => { const p=JSON.stringify({_devkit:true,_exported:new Date().toISOString(),entries:load()},null,2); if(navigator.share)navigator.share({title:'DevKit Log',text:p}).catch(()=>{}); else if(navigator.clipboard)navigator.clipboard.writeText(p); };
+    window.dkCopyC  = () => { const txt=buildClaudeBlock(),btn=$('dk-cc'); const copy=()=>{if(btn){btn.textContent='✓ Copied!';btn.classList.add('dk-copied');setTimeout(()=>{btn.textContent='📋 Copy Handoff Block';btn.classList.remove('dk-copied');},2500);}}; if(navigator.clipboard)navigator.clipboard.writeText(txt).then(copy); else{const ta=document.createElement('textarea');ta.value=txt;ta.style.cssText='position:fixed;opacity:0';document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta);copy();} };
+    window.dkClose  = () => { if(dk.panelOpen)togglePanel(); };
 
     // ── Panel toggle ──────────────────────────────────────────────
     const togglePanel = () => {
-      dk.panelOpen = !dk.panelOpen;
-      panel.classList.toggle('dk-vis', dk.panelOpen);
-      $('dk-toggle').classList.toggle('dk-open', dk.panelOpen);
-      if (dk.panelOpen) {
-        window.dkTab(dk.activeTab);
-        updateBadges();
-      }
+      dk.panelOpen=!dk.panelOpen;
+      panel.classList.toggle('dk-vis',dk.panelOpen);
+      $('dk-toggle').classList.toggle('dk-open',dk.panelOpen);
+      if(dk.panelOpen){regenCodeMap();window.dkTab(dk.activeTab);updateBadges();}
+      else if(dk.stateTimer){clearInterval(dk.stateTimer);dk.stateTimer=null;}
     };
+    const setVisible = v => { dk.visible=v; $('dk-toggle').style.display=v?'flex':'none'; $('dk-version').style.display=v?'block':'none'; if(!v&&dk.panelOpen)togglePanel(); };
+    const updateBadges = () => { const sb=$('dk-screen-badge'),mb=$('dk-modal-badge'); if(sb)sb.textContent=getScreen(); const modal=getModal(); if(mb){mb.textContent=modal?'📱 '+modal:'';mb.style.display=modal?'block':'none';} };
+    setInterval(()=>{if(dk.panelOpen)updateBadges();},800);
+    $('dk-toggle').addEventListener('click',togglePanel);
 
-    const setVisible = v => {
-      dk.visible = v;
-      $('dk-toggle').style.display  = v ? 'flex'  : 'none';
-      $('dk-version').style.display = v ? 'block' : 'none';
-      if (!v && dk.panelOpen) togglePanel();
-    };
-
-    const updateBadges = () => {
-      const sb = $('dk-screen-badge'), mb = $('dk-modal-badge');
-      if (sb) sb.textContent = getScreen();
-      const modal = getModal();
-      if (mb) { mb.textContent = modal ? '📱 '+modal : ''; mb.style.display = modal ? 'block' : 'none'; }
-    };
-
-    setInterval(() => { if (dk.panelOpen) updateBadges(); }, 800);
-
-    $('dk-toggle').addEventListener('click', togglePanel);
-    $('dk-handle').addEventListener('click', togglePanel);
-
-    // ── Inspector ─────────────────────────────────────────────────
+    // ── Inspector with 3-pass map matching ────────────────────────
     window.dkInspect = () => {
-      dk.inspecting = !dk.inspecting;
-      const ov = $('dk-inspect-overlay'), bn = $('dk-inspect-banner');
-      if (dk.inspecting) {
-        if (ov) { ov.style.display='block'; ov.style.pointerEvents='auto'; }
-        if (bn) bn.style.display='block';
-        panel.classList.remove('dk-vis'); dk.panelOpen=false;
-        $('dk-toggle').classList.remove('dk-open');
+      dk.inspecting=!dk.inspecting;
+      const ov=$('dk-inspect-overlay'),bn=$('dk-inspect-banner');
+      if(dk.inspecting){
+        if(ov){ov.style.display='block';ov.style.pointerEvents='auto';}
+        if(bn)bn.style.display='block';
+        panel.classList.remove('dk-vis');dk.panelOpen=false;$('dk-toggle').classList.remove('dk-open');
       } else {
-        if (ov) { ov.style.display='none'; ov.style.pointerEvents='none'; }
-        if (bn) bn.style.display='none';
+        if(ov){ov.style.display='none';ov.style.pointerEvents='none';}
+        if(bn)bn.style.display='none';
       }
     };
 
     const onInspectTap = e => {
-      if (!dk.inspecting) return;
-      e.preventDefault();
-      const x = e.touches?.[0]?.clientX ?? e.clientX;
-      const y = e.touches?.[0]?.clientY ?? e.clientY;
-      const ov=$('dk-inspect-overlay'), bn=$('dk-inspect-banner');
-      if (ov) ov.style.display='none';
-      if (bn) bn.style.display='none';
-      let el = document.elementFromPoint(x,y);
-      if (ov) ov.style.display='block';
-      if (bn) bn.style.display='block';
-      if (!el) return;
-      let ref=null, cur=el;
-      for (let i=0;i<6&&cur&&cur!==document.body;i++) {
-        if (cur.id && !cur.id.startsWith('dk-')) { ref='#'+cur.id; break; }
-        if (cur.className && typeof cur.className==='string') {
-          const cls=cur.className.split(' ').find(c=>c&&!c.startsWith('dk-'));
-          if (cls) { ref='.'+cls; break; }
-        }
-        cur=cur.parentElement;
+      if(!dk.inspecting)return;
+      e.preventDefault(); e.stopPropagation();
+      const x=e.touches?.[0]?.clientX??e.clientX, y=e.touches?.[0]?.clientY??e.clientY;
+      const ov=$('dk-inspect-overlay'),bn=$('dk-inspect-banner');
+      if(ov){ov.style.display='none';ov.style.pointerEvents='none';}
+      if(bn)bn.style.display='none';
+      dk.inspecting=false;
+      const target=document.elementFromPoint(x,y);
+      if(!target)return;
+
+      // Build ref string
+      let ref='',walk=target;
+      for(let i=0;i<6;i++){
+        if(!walk||walk===document.body)break;
+        if(walk.id&&!walk.id.startsWith('dk-')){ref='#'+walk.id;break;}
+        if(walk.className&&typeof walk.className==='string'){const cls=walk.className.trim().split(/\s+/).find(c=>c&&!c.startsWith('dk-'));if(cls){ref='.'+cls;break;}}
+        walk=walk.parentElement;
       }
-      if (!ref) ref=el.tagName.toLowerCase();
-      const txt=(el.textContent||'').trim().slice(0,30);
-      if (txt) ref+=` · "${txt}"`;
-      el.classList.add('dk-flash');
-      setTimeout(()=>el.classList.remove('dk-flash'),600);
-      dk.pendingRef=ref; dk.inspecting=false;
-      if (ov){ov.style.display='none';ov.style.pointerEvents='none';}
-      if (bn) bn.style.display='none';
-      dk.panelOpen=false; togglePanel();
-      window.dkTab('log');
+      const label=(target.textContent||target.placeholder||'').trim().slice(0,50);
+      const fullRef=(ref||'['+target.tagName.toLowerCase()+']')+(label?' · "'+label+'"':'');
+      dk.pendingRef=fullRef;
+
+      // Flash element
+      target.classList.add('dk-flash');
+      setTimeout(()=>target.classList.remove('dk-flash'),600);
+
+      // ── Screen key resolution ────────────────────────────────────
+      const screenKey = getScreenKey();
+      const modal = getModal();
+
+      // ── 3-pass map matching ──────────────────────────────────────
+      let matched=null;
+      // Pass 1: exact match
+      DKM_ROWS.forEach(row=>{
+        if(!row.domHint||matched)return;
+        row.domHint.split(',').forEach(h=>{h=h.trim();if(!h||matched)return;try{if(target.matches(h))matched=row;}catch(err){}});
+      });
+      // Pass 2: ancestor match
+      if(!matched)DKM_ROWS.forEach(row=>{
+        if(!row.domHint||matched)return;
+        row.domHint.split(',').forEach(h=>{h=h.trim();if(!h||matched)return;try{if(target.closest(h))matched=row;}catch(err){}});
+      });
+      // Pass 3: screen-scoped text fuzzy match
+      if(!matched&&label){
+        const q=label.toLowerCase();
+        DKM_ROWS.filter(r=>r.form===screenKey).forEach(r=>{if(matched)return;if(r.object.toLowerCase().includes(q)||q.includes(r.object.toLowerCase().slice(0,6)))matched=r;});
+      }
+      dk._tagRowId = matched?matched.id:null;
+      dk._tagSnap  = matched?null:{object:label.slice(0,40)||fullRef.split(' · ')[0], form:screenKey, current:'Tapped: '+fullRef+(modal?' in '+modal:'')};
+
+      // Build bubble content
+      const elName   = matched?matched.object:(label.slice(0,40)||ref||target.tagName.toLowerCase());
+      const sm       = matched?DKM_SCREENS[matched.form]:null;
+      const ctxLine  = matched
+        ? `<span style="color:#00d9d9">${sm?sm.icon+' '+sm.name:matched.form}</span> · ${matched.type}${matched.status!=='ok'?' · <span style="color:'+(matched.status==='broken'?'#e85d4c':'#ffd700')+'">'+matched.status+'</span>':''}`
+        : `<span style="color:#555b6e">${screenKey} · No existing entry — will create new</span>`;
+
+      setTimeout(()=>{
+        const bubble=$('dk-confirm-bubble');
+        if(!bubble)return;
+        bubble.innerHTML=`
+          <div class="dk-cb-title">🔍 Element Tagged</div>
+          <div class="dk-cb-el">${esc(elName)}</div>
+          <div class="dk-cb-ctx">${ctxLine}</div>
+          <div class="dk-cb-btns">
+            <button class="dk-cb-btn dk-cb-map" onclick="dkmTagConfirm()">Open in Map ›</button>
+            <button class="dk-cb-btn dk-cb-log" onclick="dkBubbleLog()">Log Only</button>
+          </div>`;
+        const vw=window.innerWidth,bw=240,bh=130;
+        let bx=Math.min(x-bw/2,vw-bw-12);if(bx<8)bx=8;
+        let by=y-bh-14;if(by<60)by=y+14;
+        bubble.style.left=bx+'px';bubble.style.top=by+'px';bubble.style.display='block';
+        if(bubble._timer)clearTimeout(bubble._timer);
+        bubble._timer=setTimeout(()=>{bubble.style.display='none';},8000);
+      },50);
     };
 
-    $('dk-inspect-overlay').addEventListener('touchstart', onInspectTap, {passive:false});
-    $('dk-inspect-overlay').addEventListener('click', onInspectTap);
+    window.dkBubbleLog = () => { const b=$('dk-confirm-bubble');if(b)b.style.display='none'; if(!dk.panelOpen)togglePanel(); window.dkTab('log'); };
+
+    const dismissBubbleOutside = e => {
+      const bubble=$('dk-confirm-bubble');
+      if(!bubble||bubble.style.display!=='block')return;
+      if(bubble.contains(e.target))return;
+      setTimeout(()=>{const b=$('dk-confirm-bubble');if(b&&b.style.display==='block'&&!b.contains(e.target)){b.style.display='none';dk.pendingRef=null;}},80);
+    };
+    document.addEventListener('touchstart',dismissBubbleOutside,{passive:true});
+    document.addEventListener('mousedown',dismissBubbleOutside);
+
+    $('dk-inspect-overlay').addEventListener('touchstart',onInspectTap,{passive:false});
+    $('dk-inspect-overlay').addEventListener('mousedown',onInspectTap);
 
     // ── Triple-tap activation ─────────────────────────────────────
-    const onHdrTap = () => {
-      dk.tapCount++;
-      if (dk.tapTimer) clearTimeout(dk.tapTimer);
-      dk.tapTimer = setTimeout(()=>{ dk.tapCount=0; }, 600);
-      if (dk.tapCount >= 3) { dk.tapCount=0; setVisible(!dk.visible); }
-    };
-
-    // Wire to header — wait for React to mount it
-    const wireHdr = () => {
-      const hdr = document.querySelector('.hdr-title, .hdr-brand');
-      if (hdr && !hdr._dkWired) { hdr._dkWired=true; hdr.addEventListener('click', onHdrTap); }
-    };
+    const onHdrTap = () => { dk.tapCount++; if(dk.tapTimer)clearTimeout(dk.tapTimer); dk.tapTimer=setTimeout(()=>{dk.tapCount=0;},600); if(dk.tapCount>=3){dk.tapCount=0;setVisible(!dk.visible);} };
+    const wireHdr  = () => { const hdr=document.querySelector('.hdr-title,.hdr-brand'); if(hdr&&!hdr._dkWired){hdr._dkWired=true;hdr.addEventListener('click',onHdrTap);} };
     wireHdr();
-    const obs = new MutationObserver(wireHdr);
-    obs.observe(document.body, {childList:true, subtree:true});
-    setTimeout(()=>obs.disconnect(), 10000);
-
-    // Initial render
+    const obs=new MutationObserver(wireHdr);
+    obs.observe(document.body,{childList:true,subtree:true});
+    setTimeout(()=>obs.disconnect(),10000);
     renderLog();
 
   }, []); // runs once on mount
   // ── End DevKit ────────────────────────────────────────────────────
+
 
   return (
     <>
